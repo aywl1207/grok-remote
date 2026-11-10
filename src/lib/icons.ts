@@ -128,6 +128,10 @@ export const ICONS = {
     <path d="M7.5 7.5l5 5"/>
     <path d="M12.5 7.5l-5 5"/>
   `),
+  x: wrap(`
+    <path d="M5 5l10 10"/>
+    <path d="M15 5L5 15"/>
+  `),
   'maximize-2': wrap(`
     <polyline points="13 3 17 3 17 7"/>
     <polyline points="7 17 3 17 3 13"/>
@@ -146,6 +150,15 @@ export const ICONS = {
   `),
   folder: wrap(`
     <path d="M2.5 5.5a1.5 1.5 0 0 1 1.5-1.5h3.5l1.5 2H16a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 16 16H4a1.5 1.5 0 0 1-1.5-1.5z"/>
+  `),
+  lock: wrap(`
+    <rect x="4.5" y="9" width="11" height="8" rx="1.5"/>
+    <path d="M7 9V6.5a3 3 0 0 1 6 0V9"/>
+  `),
+  logout: wrap(`
+    <path d="M8 4H5.5A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8"/>
+    <path d="M10 10h6"/>
+    <path d="M13.5 7.5 16 10l-2.5 2.5"/>
   `),
 } as const;
 

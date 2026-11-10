@@ -1,3 +1,4 @@
+import './chrome.css';
 // grok-remote dashboard entry point.
 
 import Split from 'split.js';
@@ -9,7 +10,9 @@ import { el } from './lib/render.js';
 import { registerPwa } from './lib/pwa.js';
 import { applyTheme, getTheme, nextTheme, getThemeMeta } from './lib/themes.js';
 import { installVersionFooter } from './lib/version-footer.js';
+import { isDisplayedWorking } from '../lib/agent-status.js';
 import { SYSTEM_PAGES, getSystemPage } from './views/system/index.js';
+import { applyTimestampsAttr } from './lib/timestamps.js';
 import { iconHtml } from './lib/icons.js';
 
 interface Agent {
@@ -32,6 +35,7 @@ interface SystemPageRef {
   module?: { mount?: (host: HTMLElement, route?: unknown) => void; unmount?: () => void };
 }
 
+applyTimestampsAttr();
 applyTheme(getTheme());
 
 function syncThemeToggle(name: string): void {
@@ -41,7 +45,7 @@ function syncThemeToggle(name: string): void {
   const btn   = document.getElementById('theme-toggle');
   if (dot)   dot.style.background = meta.accent;
   if (label) label.textContent = meta.label;
-  if (btn)   btn.title = `theme: ${meta.label} (click to cycle)`;
+  if (btn)   btn.title = `Theme: ${meta.label} (click to cycle)`;
 }
 
 window.addEventListener('storage', (ev: StorageEvent) => {
@@ -66,13 +70,12 @@ function setStatus(kind: string, text: string): void {
 
 async function pingHello(): Promise<void> {
   try {
-    const data = await api.hello() as { tailscale?: { backend?: string } };
-    const ts = data && data.tailscale;
-    if (ts && ts.backend === 'Running') setStatus('ok', 'tailnet up');
-    else if (ts) setStatus('warn', `tailscale: ${ts.backend || 'unknown'}`);
-    else setStatus('warn', 'no tailscale identity');
+    // This install is reached via reverse proxy + basic auth, not Tailscale.
+    // /api/hello still reports tailscale: null; don't surface that as a warning.
+    await api.hello();
+    setStatus('ok', 'Connected');
   } catch {
-    setStatus('fail', 'api unreachable');
+    setStatus('fail', 'API unreachable');
   }
 }
 
@@ -81,7 +84,7 @@ const SYSTEM_AREAS = new Set(SYSTEM_PAGES.map((p) => p.area));
 const SETTINGS_AREAS = new Set([
   'general',
   'skills', 'subagents', 'hooks', 'plugins', 'marketplaces',
-  'mcp', 'lsp', 'models', 'worktrees', 'import', 'setup',
+  'mcp', 'lsp', 'models', 'worktrees', 'workflows', 'import', 'setup',
 ]);
 
 function parseRoute(): Route {
@@ -113,6 +116,7 @@ function openDrawer(): void {
   if (btn) btn.setAttribute('aria-expanded', 'true');
   const bd = document.getElementById('drawer-backdrop') as HTMLElement | null;
   if (bd) bd.hidden = false;
+  document.dispatchEvent(new CustomEvent('grok-remote:open-drawer'));
 }
 function closeDrawer(): void {
   document.body.removeAttribute('data-drawer-open');
@@ -152,9 +156,9 @@ function makeRailIcon({ href, title, area, iconName, label }: RailIconOpts): HTM
 }
 
 function buildLeftRail(): HTMLElement {
-  const rail = el('nav', { class: 'left-rail', 'aria-label': 'top-level navigation' });
+  const rail = el('nav', { class: 'left-rail', 'aria-label': 'Top-level navigation' });
   rail.appendChild(makeRailIcon({
-    href: '#/', title: 'conversations', area: 'home', iconName: 'home', label: 'chats',
+    href: '#/', title: 'Conversations', area: 'home', iconName: 'home', label: 'Chats',
   }));
   for (const p of SYSTEM_PAGES) {
     rail.appendChild(makeRailIcon({
@@ -225,6 +229,31 @@ function mountDashboard(): void {
       closeDrawer();
     });
   }
+  const logoutBtn = document.getElementById('logout-btn') as HTMLButtonElement | null;
+  if (logoutBtn) {
+    logoutBtn.innerHTML = iconHtml('logout');
+    logoutBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      window.location.href = '/auth/logout';
+    });
+    void (async () => {
+      try {
+        const r = await fetch('/auth/me', { headers: { accept: 'application/json' } });
+        if (!r.ok) { logoutBtn.hidden = true; return; }
+        const j = await r.json() as { ok?: boolean; user?: { email?: string; name?: string; sub?: string } };
+        const user = j && j.user;
+        const who = user && (user.email || user.name || user.sub);
+        if (j && j.ok && who) {
+          logoutBtn.hidden = false;
+          logoutBtn.title = `Log out (${who})`;
+        } else {
+          logoutBtn.hidden = true;
+        }
+      } catch {
+        logoutBtn.hidden = true;
+      }
+    })();
+  }
   const brandLink = document.getElementById('brand-link');
   if (brandLink) {
     brandLink.addEventListener('click', (ev) => {
@@ -238,10 +267,11 @@ function mountDashboard(): void {
   const baseTitle = document.title;
   document.addEventListener('grok-remote:agents-refresh', (ev: Event) => {
     const list = ((ev as CustomEvent).detail || []) as Agent[];
-    const active = list.some((a) =>
-      (typeof a?.inFlight === 'number' && a.inFlight > 0) ||
-      (a?.status === 'running')
-    );
+    const active = list.some((a) => isDisplayedWorking({
+      status: a?.status,
+      turnOpen: !!(a as { turnOpen?: boolean }).turnOpen,
+      inFlight: typeof a?.inFlight === 'number' ? a.inFlight : 0,
+    }));
     if (brandActive) brandActive.hidden = !active;
     const wantTitle = active ? `(*) ${baseTitle}` : baseTitle;
     if (document.title !== wantTitle) document.title = wantTitle;
@@ -283,6 +313,18 @@ function mountDashboard(): void {
     }
     unmountActiveSystemPage();
     unmountActiveSettings();
+    // Same conversation: keep the mounted chat. Replacing the pane and
+    // calling setAgent rebuilt history and blinked the stream.
+    if (route.name === 'chat' && chat.agentId === route.agentId && chat.root.parentNode === mainHost) {
+      updateRailHighlight(route);
+      const found = sidebar.agents.find((a: Agent) => a.id === route.agentId);
+      if (found) {
+        currentAgent = found;
+        sidebar.selectedId = found.id;
+        chat.applyAgentRefresh(found);
+      }
+      return;
+    }
     mainHost.replaceChildren();
     updateRailHighlight(route);
     if (route.name === 'system') {
@@ -397,15 +439,11 @@ function isSidebarCollapsed(): boolean {
 function installToolsToggle(): void {
   const btn = document.getElementById('topbar-sidebar-right') as HTMLElement | null;
   if (!btn) return;
-  if (isMobileViewport()) {
-    btn.hidden = true;
-    return;
-  }
   btn.hidden = false;
   let collapsed = false;
   function paint(): void {
     btn!.innerHTML = iconHtml(collapsed ? 'panel-right-open' : 'panel-right-close');
-    btn!.title = collapsed ? 'show tool calls panel' : 'hide tool calls panel';
+    btn!.title = collapsed ? 'Show tool calls panel' : 'Hide tool calls panel';
     btn!.setAttribute('aria-label', btn!.title);
   }
   paint();
@@ -428,10 +466,7 @@ function installOuterSplit(splitHost: HTMLElement, sidebarPane: HTMLElement, mai
     let wasMobile = true;
     window.addEventListener('resize', () => {
       const nowMobile = isMobileViewport();
-      if (wasMobile !== nowMobile) {
-        wasMobile = nowMobile;
-        location.reload();
-      }
+      if (wasMobile !== nowMobile) wasMobile = nowMobile;
     });
     return;
   }
@@ -452,8 +487,8 @@ function installOuterSplit(splitHost: HTMLElement, sidebarPane: HTMLElement, mai
   function updateTopbarBtn(): void {
     if (!topbarBtn) return;
     topbarBtn.innerHTML = iconHtml(collapsed ? 'panel-left-open' : 'panel-left-close');
-    topbarBtn.title = collapsed ? 'show conversations sidebar' : 'hide conversations sidebar';
-    topbarBtn.setAttribute('aria-label', collapsed ? 'show conversations sidebar' : 'hide conversations sidebar');
+    topbarBtn.title = collapsed ? 'Show conversations sidebar' : 'Hide conversations sidebar';
+    topbarBtn.setAttribute('aria-label', collapsed ? 'Show conversations sidebar' : 'Hide conversations sidebar');
   }
 
   function buildSplit(initialSizes: number[]): void {
@@ -518,10 +553,7 @@ function installOuterSplit(splitHost: HTMLElement, sidebarPane: HTMLElement, mai
   let wasMobile = false;
   window.addEventListener('resize', () => {
     const nowMobile = isMobileViewport();
-    if (wasMobile !== nowMobile) {
-      wasMobile = nowMobile;
-      location.reload();
-    }
+    if (wasMobile !== nowMobile) wasMobile = nowMobile;
   });
 }
 
@@ -553,7 +585,7 @@ function installBgTracker(): void {
         ? data.agents.reduce((a, g) => a + (g.terminals?.length || 0), 0)
         : 0;
       btn!.hidden = totalEntries === 0;
-      count!.textContent = `bg: ${n}`;
+      count!.textContent = `Bg: ${n}`;
       btn!.classList.toggle('topbar-bg--active', n > 0);
       btn!.classList.toggle('topbar-bg--exited-only', n === 0 && totalEntries > 0);
     } catch {
@@ -572,7 +604,7 @@ function openBgViewer(getSnapshot: () => BgSnapshot | null): void {
     type: 'button', class: 'bgglobal-viewer__close',
     onclick: () => overlay.remove(),
   }, '×');
-  const title = el('div', { class: 'bgglobal-viewer__title' }, 'background processes');
+  const title = el('div', { class: 'bgglobal-viewer__title' }, 'Background processes');
   const body  = el('div', { class: 'bgglobal-viewer__body' });
   overlay.appendChild(el('div', { class: 'bgglobal-viewer__head' }, title, closeBtn));
   overlay.appendChild(body);
@@ -586,7 +618,7 @@ function openBgViewer(getSnapshot: () => BgSnapshot | null): void {
     const groups = (data && Array.isArray(data.agents)) ? data.agents : [];
     if (!groups.length) {
       body.appendChild(el('div', { class: 'bgglobal-viewer__empty' },
-        'no background processes are running.'));
+        'No background processes are running.'));
       return;
     }
     for (const g of groups) {
@@ -600,7 +632,7 @@ function openBgViewer(getSnapshot: () => BgSnapshot | null): void {
             overlay.remove();
             navigate(`#/agents/${encodeURIComponent(g.agentId)}`);
           },
-        }, 'open conversation'),
+        }, 'Open conversation'),
       ));
       for (const t of (g.terminals || [])) {
         const exited = !!t.exited;
@@ -608,7 +640,7 @@ function openBgViewer(getSnapshot: () => BgSnapshot | null): void {
         const row = el('div', { class: `bgglobal-viewer__term ${exited ? 'bgglobal-viewer__term--exited' : ''}` },
           el('span', { class: 'bgglobal-viewer__term-status' },
             el('span', { class: 'bgglobal-viewer__term-dot' }),
-            exited ? `exit ${code ?? '?'}` : 'running'),
+            exited ? `Exit ${code ?? '?'}` : 'Running'),
           el('div', { class: 'bgglobal-viewer__term-cmd' }, t.command || ''),
           el('div', { class: 'bgglobal-viewer__term-cwd' }, t.cwd || ''),
           el('div', { class: 'bgglobal-viewer__term-actions' },
@@ -617,7 +649,7 @@ function openBgViewer(getSnapshot: () => BgSnapshot | null): void {
               href: t.url,
               target: '_blank',
               rel: 'noopener',
-              title: `open ${t.url}`,
+              title: `Open ${t.url}`,
               html: `<span class="bgglobal-viewer__open-url-ico">${iconHtml('globe')}</span><span class="bgglobal-viewer__open-url-label">Open App</span>`,
             }),
             el('button', {
@@ -626,18 +658,18 @@ function openBgViewer(getSnapshot: () => BgSnapshot | null): void {
                 overlay.remove();
                 navigate(`#/agents/${encodeURIComponent(g.agentId)}`);
               },
-            }, 'view in conversation'),
+            }, 'View in conversation'),
             !exited && el('button', {
               type: 'button', class: 'bgglobal-viewer__kill',
               onclick: (ev: MouseEvent) => {
                 const btn = ev.currentTarget as HTMLButtonElement;
                 btn.disabled = true;
-                btn.textContent = 'killing...';
+                btn.textContent = 'Killing…';
                 row.classList.add('bgglobal-viewer__term--killing');
                 void (async () => {
                   try {
                     await api.terminals.kill(g.agentId, t.id);
-                    btn.textContent = 'kill sent';
+                    btn.textContent = 'Kill sent';
                     const stEl = row.querySelector('.bgglobal-viewer__term-status');
                     if (stEl) {
                       stEl.replaceChildren(
@@ -647,7 +679,7 @@ function openBgViewer(getSnapshot: () => BgSnapshot | null): void {
                     }
                   } catch (err) {
                     btn.disabled = false;
-                    btn.textContent = 'kill failed; retry';
+                    btn.textContent = 'Kill failed; retry';
                     btn.title = err instanceof Error ? err.message : String(err);
                   }
                 })();

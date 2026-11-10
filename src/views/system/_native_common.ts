@@ -13,7 +13,7 @@ export async function loadInspect(): Promise<InspectResult> {
       inspectError?: string;
     };
     if (!data || !data.ok) {
-      return { inspect: null, error: (data && data.error) || 'unknown failure' };
+      return { inspect: null, error: (data && data.error) || 'Unknown failure' };
     }
     if (data.inspectError) {
       return { inspect: null, error: String(data.inspectError) };
@@ -53,14 +53,14 @@ export function addConfigFilesBanner(section: HTMLElement | null, configFiles: C
       const copyBtn = document.createElement('button');
       copyBtn.type = 'button';
       copyBtn.className = 'health-copy-btn';
-      copyBtn.textContent = 'copy';
-      copyBtn.title = 'copy path to clipboard';
+      copyBtn.textContent = 'Copy';
+      copyBtn.title = 'Copy path to clipboard';
       copyBtn.addEventListener('click', async (ev: MouseEvent) => {
         ev.stopPropagation();
         try {
           await navigator.clipboard.writeText(cf.path!);
-          copyBtn.textContent = 'copied';
-          setTimeout(() => { copyBtn.textContent = 'copy'; }, 1200);
+          copyBtn.textContent = 'Copied';
+          setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1200);
         } catch { /* ignore */ }
       });
       row.appendChild(copyBtn);
@@ -112,14 +112,14 @@ export function buildPageShell(container: HTMLElement, { title, blurb, configFil
         const copyBtn = document.createElement('button');
         copyBtn.type = 'button';
         copyBtn.className = 'health-copy-btn';
-        copyBtn.textContent = 'copy';
-        copyBtn.title = 'copy path to clipboard';
+        copyBtn.textContent = 'Copy';
+        copyBtn.title = 'Copy path to clipboard';
         copyBtn.addEventListener('click', async (ev: MouseEvent) => {
           ev.stopPropagation();
           try {
             await navigator.clipboard.writeText(cf.path!);
-            copyBtn.textContent = 'copied';
-            setTimeout(() => { copyBtn.textContent = 'copy'; }, 1200);
+            copyBtn.textContent = 'Copied';
+            setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1200);
           } catch { /* ignore */ }
         });
         row.appendChild(copyBtn);
@@ -132,7 +132,7 @@ export function buildPageShell(container: HTMLElement, { title, blurb, configFil
 
   const status = document.createElement('div');
   status.className = 'system-page-empty';
-  status.textContent = 'loading...';
+  status.textContent = 'Loading…';
   status.dataset['role'] = 'status';
   section.appendChild(status);
 
@@ -242,7 +242,7 @@ export function buildItem({
 
   const name = document.createElement('span');
   name.className = 'health-item-name';
-  name.textContent = primary || '(unnamed)';
+  name.textContent = primary || '(Unnamed)';
   left.appendChild(name);
 
   if (secondary) {
@@ -254,7 +254,7 @@ export function buildItem({
   if (pluginTag) {
     const sec = document.createElement('span');
     sec.className = 'health-item-secondary health-dim';
-    sec.textContent = `from plugin: ${pluginTag}`;
+    sec.textContent = `From plugin: ${pluginTag}`;
     left.appendChild(sec);
   }
 
@@ -291,7 +291,7 @@ export function buildItem({
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'health-item-toggle';
-  toggle.textContent = 'show json';
+  toggle.textContent = 'Show JSON';
   right.appendChild(toggle);
   head.appendChild(right);
   card.appendChild(head);
@@ -326,14 +326,14 @@ export function buildItem({
       const copyBtn = document.createElement('button');
       copyBtn.type = 'button';
       copyBtn.className = 'health-copy-btn';
-      copyBtn.textContent = 'copy';
-      copyBtn.title = 'copy path to clipboard';
+      copyBtn.textContent = 'Copy';
+      copyBtn.title = 'Copy path to clipboard';
       copyBtn.addEventListener('click', async (ev: MouseEvent) => {
         ev.stopPropagation();
         try {
           await navigator.clipboard.writeText(sourcePath);
-          copyBtn.textContent = 'copied';
-          setTimeout(() => { copyBtn.textContent = 'copy'; }, 1200);
+          copyBtn.textContent = 'Copied';
+          setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1200);
         } catch { /* ignore */ }
       });
       src.appendChild(copyBtn);
@@ -347,7 +347,7 @@ export function buildItem({
   card.appendChild(body);
   toggle.addEventListener('click', () => {
     const hidden = body.classList.toggle('hidden');
-    toggle.textContent = hidden ? 'show json' : 'hide json';
+    toggle.textContent = hidden ? 'Show JSON' : 'Hide JSON';
   });
 
   return card;
@@ -395,12 +395,12 @@ export function safeStringify(v: unknown, indent?: number): string {
 }
 
 export function scopeLabel(s: unknown): string {
-  if (!s) return 'unknown';
+  if (!s) return 'Unknown';
   const lc = String(s).toLowerCase();
-  if (lc === 'user' || lc === 'global') return 'user';
-  if (lc === 'project' || lc === 'cwd' || lc === 'repo' || lc === 'workspace') return 'workspace';
-  if (lc === 'builtin') return 'builtin';
-  if (lc === 'plugin') return 'plugin';
+  if (lc === 'user' || lc === 'global') return 'User';
+  if (lc === 'project' || lc === 'cwd' || lc === 'repo' || lc === 'workspace') return 'Workspace';
+  if (lc === 'builtin') return 'Builtin';
+  if (lc === 'plugin') return 'Plugin';
   return lc;
 }
 

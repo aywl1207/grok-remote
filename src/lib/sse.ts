@@ -8,7 +8,10 @@
 // - The server is expected to emit named events (sessionUpdate discriminator)
 //   plus our own lifecycle ones: agent_status, prompt_complete, error.
 
-const KNOWN_EVENTS = [
+export const KNOWN_EVENTS = [
+  'user_message',
+  'user_message_chunk',
+  'handshake',
   'agent_message_chunk',
   'agent_thought_chunk',
   'tool_call',
@@ -20,6 +23,20 @@ const KNOWN_EVENTS = [
   'prompt_complete',
   'error',
   'session_notification',
+  'permission_request',
+  'plan_approval',
+  'user_question',
+  // Grok compact lifecycle. EventSource only delivers named events we
+  // subscribe to; these never hit the generic "message" listener.
+  'x.ai/session/update',
+  'auto_compact_started',
+  'auto_compact_completed',
+  'auto_compact_failed',
+  'auto_compact_cancelled',
+  'compact_started',
+  'compact_completed',
+  'compact_failed',
+  'compaction_checkpoint',
 ] as const;
 
 export type StreamEventName = (typeof KNOWN_EVENTS)[number] | 'message';
@@ -42,6 +59,7 @@ export interface StreamHandle {
 export function openStream(url: string, { onOpen, onError, onAny, on }: StreamOptions = {}): StreamHandle {
   let es: EventSource | null = null;
   let closed = false;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   const handlers: Partial<Record<StreamEventName, StreamHandler>> = { ...(on || {}) };
 
@@ -51,6 +69,26 @@ export function openStream(url: string, { onOpen, onError, onAny, on }: StreamOp
     });
     source.addEventListener('error', (ev: Event) => {
       if (typeof onError === 'function') onError(ev);
+      if (closed) return;
+      // Browser EventSource auto-retries CONNECTING. A fatal CLOSED socket
+      // never opens again unless we construct a new EventSource.
+      if (source.readyState === 2) {
+        try { source.close(); } catch { /* ignore */ }
+        if (es === source) {
+          try { es.close(); } catch { /* ignore */ }
+        }
+        if (reconnectTimer) return;
+        reconnectTimer = setTimeout(() => {
+          reconnectTimer = null;
+          if (closed) return;
+          try {
+            es = new EventSource(url);
+            attach(es);
+          } catch (err) {
+            if (typeof onError === 'function') onError(err);
+          }
+        }, 1000);
+      }
     });
     for (const name of KNOWN_EVENTS) {
       source.addEventListener(name, (ev: MessageEvent) => {
@@ -80,12 +118,18 @@ export function openStream(url: string, { onOpen, onError, onAny, on }: StreamOp
   return {
     close(): void {
       closed = true;
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       if (es) {
         try { es.close(); } catch { /* ignore */ }
         es = null;
       }
     },
-    isClosed(): boolean { return closed; },
+    isClosed(): boolean {
+      if (closed) return true;
+      if (reconnectTimer) return false;
+      if (!es) return true;
+      return es.readyState === 2;
+    },
     readyState(): number { return es ? es.readyState : 2; },
   };
 }

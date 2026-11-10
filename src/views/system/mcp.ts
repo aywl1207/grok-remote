@@ -116,9 +116,9 @@ function render(): void {
     <header class="mcp-header">
       <h2 class="system-page-title">MCP servers</h2>
       <div class="mcp-header-actions">
-        <button type="button" class="mcp-btn" data-act="browse-registry">browse registry</button>
-        <button type="button" class="mcp-btn" data-act="refresh">refresh</button>
-        <button type="button" class="mcp-btn mcp-btn--accent" data-act="doctor-all">doctor all</button>
+        <button type="button" class="mcp-btn" data-act="browse-registry">Browse Registry</button>
+        <button type="button" class="mcp-btn" data-act="refresh">Refresh</button>
+        <button type="button" class="mcp-btn mcp-btn--accent" data-act="doctor-all">Doctor All</button>
       </div>
     </header>
 
@@ -136,12 +136,12 @@ function render(): void {
       <h3 class="mcp-section-title">Add server</h3>
       <form class="mcp-add-form" data-slot="form" autocomplete="off">
         <label class="mcp-field">
-          <span class="mcp-field-label">name</span>
+          <span class="mcp-field-label">Name</span>
           <input name="name" type="text" required pattern="[A-Za-z0-9_.\\-]+" placeholder="my-server" />
         </label>
 
         <div class="mcp-field mcp-field--row">
-          <span class="mcp-field-label">transport</span>
+          <span class="mcp-field-label">Transport</span>
           <label class="mcp-radio"><input type="radio" name="type" value="stdio" checked /> stdio</label>
           <label class="mcp-radio"><input type="radio" name="type" value="http" /> http</label>
           <label class="mcp-radio"><input type="radio" name="type" value="sse" /> sse</label>
@@ -149,22 +149,22 @@ function render(): void {
 
         <div class="mcp-stdio-fields" data-slot="stdio-fields">
           <label class="mcp-field">
-            <span class="mcp-field-label">command</span>
+            <span class="mcp-field-label">Command</span>
             <input name="command" type="text" placeholder="npx" />
           </label>
           <label class="mcp-field">
-            <span class="mcp-field-label">args (one per line)</span>
+            <span class="mcp-field-label">Args (one per line)</span>
             <textarea name="args" rows="3" placeholder="-y&#10;@modelcontextprotocol/server-github"></textarea>
           </label>
           <label class="mcp-field">
-            <span class="mcp-field-label">env (KEY=VALUE per line)</span>
+            <span class="mcp-field-label">Env (KEY=VALUE per line)</span>
             <textarea name="env" rows="3" placeholder="GITHUB_PERSONAL_ACCESS_TOKEN=ghp_..."></textarea>
           </label>
         </div>
 
         <div class="mcp-url-fields" data-slot="url-fields" hidden>
           <label class="mcp-field">
-            <span class="mcp-field-label">url</span>
+            <span class="mcp-field-label">URL</span>
             <input name="url" type="text" placeholder="https://mcp.example.com/v1" />
           </label>
         </div>
@@ -172,7 +172,7 @@ function render(): void {
         <div class="mcp-form-error" data-slot="form-error" hidden></div>
 
         <div class="mcp-form-actions">
-          <button type="submit" class="mcp-btn mcp-btn--primary" data-slot="submit">add</button>
+          <button type="submit" class="mcp-btn mcp-btn--primary" data-slot="submit">Add</button>
           <button type="reset" class="mcp-btn">reset</button>
         </div>
       </form>
@@ -248,21 +248,21 @@ function renderList(): void {
   if (state.loading) {
     const p = document.createElement('p');
     p.className = 'mcp-empty';
-    p.textContent = 'loading...';
+    p.textContent = 'Loading…';
     slot.appendChild(p);
     return;
   }
   if (state.loadError) {
     const p = document.createElement('p');
     p.className = 'mcp-empty mcp-empty--err';
-    p.textContent = `failed to load: ${state.loadError}`;
+    p.textContent = `Failed to load: ${state.loadError}`;
     slot.appendChild(p);
     return;
   }
   if (!state.servers.length) {
     const p = document.createElement('p');
     p.className = 'mcp-empty';
-    p.textContent = 'no MCP servers configured. add one below.';
+    p.textContent = 'No MCP servers configured. Add one below.';
     slot.appendChild(p);
     return;
   }
@@ -300,7 +300,7 @@ function buildCard(server: McpServer): HTMLElement {
   if (target) {
     const row = document.createElement('div');
     row.className = 'mcp-row';
-    row.innerHTML = `<span class="mcp-row-label">${transport === 'stdio' ? 'command' : 'url'}</span>`;
+    row.innerHTML = `<span class="mcp-row-label">${transport === 'stdio' ? 'Command' : 'URL'}</span>`;
     const code = document.createElement('code');
     code.className = 'mcp-row-value';
     code.textContent = target;
@@ -310,7 +310,7 @@ function buildCard(server: McpServer): HTMLElement {
   if (args && args.length) {
     const row = document.createElement('div');
     row.className = 'mcp-row';
-    row.innerHTML = `<span class="mcp-row-label">args</span>`;
+    row.innerHTML = `<span class="mcp-row-label">Args</span>`;
     const code = document.createElement('code');
     code.className = 'mcp-row-value';
     code.textContent = args.join(' ');
@@ -320,7 +320,7 @@ function buildCard(server: McpServer): HTMLElement {
   if (env && Object.keys(env).length) {
     const row = document.createElement('div');
     row.className = 'mcp-row';
-    row.innerHTML = `<span class="mcp-row-label">env</span>`;
+    row.innerHTML = `<span class="mcp-row-label">Env</span>`;
     const code = document.createElement('code');
     code.className = 'mcp-row-value';
     code.textContent = Object.keys(env).join(', ');
@@ -512,7 +512,7 @@ async function removeServer(name: string): Promise<void> {
     const resp = await api.mcp.remove(name) as { servers?: unknown } | undefined;
     if (Array.isArray(resp?.servers)) state.servers = resp!.servers as McpServer[];
   } catch (err) {
-    cs.doctorError = `remove failed: ${err instanceof Error ? err.message : String(err)}`;
+    cs.doctorError = `Remove failed: ${err instanceof Error ? err.message : String(err)}`;
   } finally {
     cs.removing = false;
     renderList();
@@ -560,7 +560,7 @@ function renderDoctorAll(): void {
   const btn = activeContainer.querySelector<HTMLButtonElement>('[data-act="doctor-all"]');
   if (btn) {
     btn.disabled = state.doctorAllBusy;
-    btn.textContent = state.doctorAllBusy ? 'checking...' : 'doctor all';
+    btn.textContent = state.doctorAllBusy ? 'Checking…' : 'Doctor All';
   }
   if (!state.doctorAllResult && !state.doctorAllError && !state.doctorAllBusy) {
     slot.hidden = true;
@@ -570,7 +570,7 @@ function renderDoctorAll(): void {
   if (state.doctorAllBusy) {
     const p = document.createElement('p');
     p.className = 'mcp-empty';
-    p.textContent = 'running doctor on all servers...';
+    p.textContent = 'Running doctor on all servers…';
     slot.appendChild(p);
     return;
   }
@@ -596,7 +596,7 @@ const KIND_BADGE_META: Record<ServerKind, { label: string; icon?: string; toolti
     tooltip: 'Runs locally as a subprocess. No network calls.',
   },
   'api-wrapper': {
-    label: 'api wrapper',
+    label: 'API wrapper',
     icon: '⚙',
     tooltip: 'Runs locally but talks to a third-party API. Requires credentials.',
   },
@@ -625,7 +625,7 @@ function toPickEntry(e: McpRegistryEntry & { source?: string }): RegistryPickEnt
     group: e.category,
     tags,
     official: e.official,
-    envHints: (e.env || []).map(v => `${v.required ? 'required' : 'optional'} env: ${v.name}${v.placeholder ? ` (${v.placeholder})` : ''}`),
+    envHints: (e.env || []).map(v => `${v.required ? 'Required' : 'Optional'} env: ${v.name}${v.placeholder ? ` (${v.placeholder})` : ''}`),
     docsUrl: e.url_docs,
     kindBadge,
   };
@@ -642,7 +642,7 @@ function fromLive(le: LiveRegistryEntry): McpRegistryEntry {
   return {
     name: le.name,
     slug: le.slug,
-    description: le.description || '(no description)',
+    description: le.description || '(No description)',
     category: le.category || 'other',
     transport: le.transport,
     ...(le.command ? { command: le.command } : {}),
@@ -707,7 +707,7 @@ function openMcpRegistryPicker(): void {
     onRefresh: async () => {
       const resp = await api.mcp.refreshRegistry() as LiveRegistryResponse;
       if (!resp || !Array.isArray(resp.entries)) {
-        throw new Error(resp && resp.error ? resp.error : 'empty registry response');
+        throw new Error(resp && resp.error ? resp.error : 'Empty registry response');
       }
       const merged = dedupeBySlug(resp.entries.map(fromLive));
       pickerState = { bySlug: new Map(merged.map(e => [e.slug, e])), source: 'live' };

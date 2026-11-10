@@ -104,7 +104,7 @@ export function openRegistryPicker(opts: OpenRegistryPickerOptions): RegistryPic
     refreshBtn = document.createElement('button');
     refreshBtn.type = 'button';
     refreshBtn.className = 'mcp-btn';
-    refreshBtn.textContent = 'refresh';
+    refreshBtn.textContent = 'Refresh';
     refreshBtn.title = 'Re-fetch from upstream registry';
     refreshBtn.addEventListener('click', () => { void doRefresh(); });
     headActions.appendChild(refreshBtn);
@@ -112,7 +112,7 @@ export function openRegistryPicker(opts: OpenRegistryPickerOptions): RegistryPic
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';
   closeBtn.className = 'mcp-btn';
-  closeBtn.textContent = 'close';
+  closeBtn.textContent = 'Close';
   headActions.appendChild(closeBtn);
   head.appendChild(h2);
   head.appendChild(headActions);
@@ -209,12 +209,12 @@ export function openRegistryPicker(opts: OpenRegistryPickerOptions): RegistryPic
       paint(filter.value);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      paintStatus(`refresh failed: ${msg}`);
+      paintStatus(`Refresh failed: ${msg}`);
     } finally {
       refreshing = false;
       if (refreshBtn) {
         refreshBtn.disabled = false;
-        refreshBtn.textContent = 'refresh';
+        refreshBtn.textContent = 'Refresh';
       }
     }
   }
@@ -268,7 +268,7 @@ export function openRegistryPicker(opts: OpenRegistryPickerOptions): RegistryPic
       } else {
         const fallback = document.createElement('p');
         fallback.className = 'registry-picker__empty';
-        fallback.textContent = 'nothing matches that filter.';
+        fallback.textContent = 'Nothing matches that filter.';
         body.appendChild(fallback);
       }
       return;
@@ -324,7 +324,7 @@ export function openRegistryPicker(opts: OpenRegistryPickerOptions): RegistryPic
     if (e.official) {
       const badge = document.createElement('span');
       badge.className = 'registry-item__badge';
-      badge.textContent = 'official';
+      badge.textContent = 'Official';
       itemHead.appendChild(badge);
     }
     if (Array.isArray(e.tags)) {
@@ -361,13 +361,13 @@ export function openRegistryPicker(opts: OpenRegistryPickerOptions): RegistryPic
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
       a.className = 'registry-item__docs';
-      a.textContent = 'docs';
+      a.textContent = 'Docs';
       actions.appendChild(a);
     }
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
     addBtn.className = 'mcp-btn mcp-btn--primary';
-    addBtn.textContent = 'add';
+    addBtn.textContent = 'Add';
     addBtn.addEventListener('click', () => {
       opts.onAdd(e.slug);
       if (opts.closeAfterAdd) close();

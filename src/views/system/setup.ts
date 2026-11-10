@@ -78,9 +78,9 @@ async function runSetup(btn: HTMLButtonElement, resultHost: HTMLElement): Promis
   if (!btn || !resultHost) return;
   btn.disabled = true;
   const origLabel = btn.textContent;
-  btn.textContent = 'running...';
+  btn.textContent = 'Running…';
   resultHost.replaceChildren(
-    el('div', { class: 'setup-running' }, 'invoking grok setup; this may take a moment...'),
+    el('div', { class: 'setup-running' }, 'Invoking grok setup; this may take a moment…'),
   );
 
   const abort = new AbortController();
@@ -98,7 +98,7 @@ async function runSetup(btn: HTMLButtonElement, resultHost: HTMLElement): Promis
     const msg = err instanceof Error ? err.message : String(err);
     resultHost.replaceChildren(
       el('div', { class: 'setup-error' },
-        el('strong', null, 'request failed: '),
+        el('strong', null, 'Request failed: '),
         msg),
     );
   } finally {
@@ -112,20 +112,20 @@ function renderResult(host: HTMLElement, status: number, data: SetupResponse | n
   host.replaceChildren();
   if (!data || typeof data !== 'object') {
     host.appendChild(el('div', { class: 'setup-error' },
-      `unexpected response from server (HTTP ${status})`));
+      `Unexpected response from server (HTTP ${status})`));
     return;
   }
   const kind = typeof data.kind === 'string' ? data.kind : (data.ok ? 'ok' : 'error');
   const exit = data.exitCode ?? '?';
   const summary = (typeof data.summary === 'string' && data.summary)
     || data.error
-    || 'unknown error';
+    || 'Unknown error';
 
   let badge: string, headline: string, headMod: string;
   if (kind === 'ok') {
     badge    = 'success';
     headMod  = 'ok';
-    headline = `grok setup completed (exit ${exit}).`;
+    headline = `Grok setup completed (exit ${exit}).`;
   } else if (kind === 'no-deployment-key') {
     badge    = 'info';
     headMod  = 'info';
@@ -155,7 +155,7 @@ function renderResult(host: HTMLElement, status: number, data: SetupResponse | n
   } else if (data.inspectError) {
     host.appendChild(el('div', { class: 'setup-result-note' },
       el('strong', null, 'grok inspect: '),
-      `unavailable (${data.inspectError})`,
+      `Unavailable (${data.inspectError})`,
     ));
   }
 }

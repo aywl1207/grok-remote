@@ -37,34 +37,64 @@ async function request(method: string, path: string, body?: unknown): Promise<un
 export interface PromptInput {
   text?: string;
   attachments?: unknown[];
+  force?: boolean;
 }
 
 export interface HistoryOptions {
   turns?: number;
   all?: boolean;
+  skip?: number;
 }
 
 export interface HistoryResult {
   events: unknown[];
   totalTurns: number;
   returnedTurns: number;
+  lastEventId: string;
+}
+
+export function parseModelsPayload(data: unknown): unknown[] {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object') {
+    const rec = data as { items?: unknown[]; models?: unknown[] };
+    if (Array.isArray(rec.items)) return rec.items;
+    if (Array.isArray(rec.models)) return rec.models;
+  }
+  return [];
 }
 
 export const api = {
   hello:    (): Promise<unknown>   => request('GET',    '/api/hello'),
   health:   (): Promise<unknown>   => request('GET',    '/api/health'),
-  models:   (): Promise<unknown>   => request('GET',    '/api/models'),
+  models:   (): Promise<unknown>   => request('GET',    '/api/system/models'),
 
   listAgents:      (): Promise<unknown> => request('GET',    '/api/agents'),
   agentsStreamUrl: (): string => '/api/agents/stream',
   getAgent:     (id: string): Promise<unknown>          => request('GET',    `/api/agents/${encodeURIComponent(id)}`),
+  agentContext: (id: string): Promise<unknown>          => request('GET',    `/api/agents/${encodeURIComponent(id)}/context`),
   createAgent:  (body?: Record<string, unknown>): Promise<unknown>  => request('POST',   '/api/agents', body || {}),
   deleteAgent:  (id: string): Promise<unknown>          => request('DELETE', `/api/agents/${encodeURIComponent(id)}`),
   updateAgent:  (id: string, patch?: Record<string, unknown>): Promise<unknown>   => request('PATCH',  `/api/agents/${encodeURIComponent(id)}`, patch || {}),
   setAgentFolder: (id: string, folderId: string | null): Promise<unknown> =>
     request('PUT', `/api/agents/${encodeURIComponent(id)}/folder`, { folderId }),
   disconnect:   (id: string): Promise<unknown>          => request('POST',   `/api/agents/${encodeURIComponent(id)}/disconnect`),
-  connect:      (id: string): Promise<unknown>          => request('POST',   `/api/agents/${encodeURIComponent(id)}/connect`),
+  connect:      (id: string, opts?: { recreateHold?: boolean; freshSession?: boolean }): Promise<unknown> =>
+    request('POST', `/api/agents/${encodeURIComponent(id)}/connect`, {
+      ...(opts && opts.recreateHold ? { recreateHold: true } : {}),
+      ...(opts && opts.freshSession ? { freshSession: true } : {}),
+    }),
+  rewind:       (id: string, keepTurns: number): Promise<unknown> =>
+    request('POST', `/api/agents/${encodeURIComponent(id)}/rewind`, { keepTurns }),
+  compact:      (id: string, opts?: { context?: string }): Promise<unknown> =>
+    request('POST', `/api/agents/${encodeURIComponent(id)}/compact`, opts || {}),
+  fork:         (id: string, body?: { name?: string; directive?: string; folderId?: string | null }): Promise<unknown> =>
+    request('POST', `/api/agents/${encodeURIComponent(id)}/fork`, body || {}),
+  permission:   (id: string, requestId: string, optionId: string): Promise<unknown> =>
+    request('POST', `/api/agents/${encodeURIComponent(id)}/permission`, { requestId, optionId }),
+  interaction:  (id: string, requestId: string, result: unknown): Promise<unknown> =>
+    request('POST', `/api/agents/${encodeURIComponent(id)}/interaction`, { requestId, result }),
+  pendingInteractions: (id: string): Promise<{ items?: Array<Record<string, unknown>> }> =>
+    request('GET', `/api/agents/${encodeURIComponent(id)}/interactions`),
   share:        (id: string): Promise<unknown>          => request('POST',   `/api/agents/${encodeURIComponent(id)}/publish`),
   runSetup:     (): Promise<unknown>                    => request('POST',   '/api/system/setup'),
   prompt:       (id: string, textOrOpts: string | PromptInput): Promise<unknown> => {
@@ -74,16 +104,29 @@ export const api = {
           ...(Array.isArray(textOrOpts.attachments) && textOrOpts.attachments.length
             ? { attachments: textOrOpts.attachments }
             : {}),
+          ...(textOrOpts.force ? { force: true } : {}),
         }
       : { text: String(textOrOpts || '') };
     return request('POST', `/api/agents/${encodeURIComponent(id)}/prompt`, body);
   },
+  interject:    (id: string, textOrOpts: string | PromptInput): Promise<unknown> => {
+    const body = (textOrOpts && typeof textOrOpts === 'object')
+      ? {
+          text: String(textOrOpts.text || ''),
+          ...(Array.isArray(textOrOpts.attachments) && textOrOpts.attachments.length
+            ? { attachments: textOrOpts.attachments }
+            : {}),
+        }
+      : { text: String(textOrOpts || '') };
+    return request('POST', `/api/agents/${encodeURIComponent(id)}/interject`, body);
+  },
   cancel:       (id: string): Promise<unknown> => request('POST',   `/api/agents/${encodeURIComponent(id)}/cancel`),
   history:      async (id: string, opts?: HistoryOptions): Promise<HistoryResult> => {
-    const { turns, all } = opts || {};
+    const { turns, all, skip } = opts || {};
     const qs = new URLSearchParams();
     if (all) qs.set('all', '1');
     if (typeof turns === 'number' && turns > 0) qs.set('turns', String(turns));
+    if (typeof skip === 'number' && skip > 0) qs.set('skip', String(skip));
     const url = `/api/agents/${encodeURIComponent(id)}/history${qs.toString() ? `?${qs}` : ''}`;
     const r = await fetch(url, { headers: { accept: 'application/x-ndjson' } });
     if (!r.ok) {
@@ -102,11 +145,108 @@ export const api = {
       events,
       totalTurns:    parseInt(r.headers.get('X-Total-Turns')    || '0', 10) || 0,
       returnedTurns: parseInt(r.headers.get('X-Returned-Turns') || '0', 10) || 0,
+      lastEventId:   r.headers.get('X-Last-Event-Id') || '',
     };
   },
   listFiles:    (id: string, path?: string): Promise<unknown> => request('GET', `/api/agents/${encodeURIComponent(id)}/files${path ? `?path=${encodeURIComponent(path)}` : ''}`),
   readFile:     (id: string, path: string): Promise<unknown> => request('GET', `/api/agents/${encodeURIComponent(id)}/files?path=${encodeURIComponent(path)}`),
-  fileRawUrl:   (id: string, p?: string): string => `/api/agents/${encodeURIComponent(id)}/files/raw?path=${encodeURIComponent(p || '')}`,
+  fileRawUrl:   (id: string, p?: string, opts?: { download?: boolean }): string => {
+    const qs = new URLSearchParams({ path: p || '' });
+    if (opts && opts.download) qs.set('download', '1');
+    return `/api/agents/${encodeURIComponent(id)}/files/raw?${qs.toString()}`;
+  },
+  FILE_UPLOAD_MAX_BYTES: 2 * 1024 * 1024 * 1024,
+  // Cloudflare orange-cloud rejects a single request over ~100 MB.
+  FILE_UPLOAD_CHUNK_BYTES: 8 * 1024 * 1024,
+
+  uploadFile: async (id: string, opts: {
+    dir?: string;
+    name: string;
+    file: Blob;
+    onProgress?: (loaded: number, total: number) => void;
+  }): Promise<unknown> => {
+    const max = api.FILE_UPLOAD_MAX_BYTES;
+    const chunkSize = api.FILE_UPLOAD_CHUNK_BYTES;
+    const file = opts.file;
+    const total = typeof (file as File).size === 'number' ? (file as File).size : 0;
+    if (total > max) {
+      throw new Error('File is too large (max 2 GB)');
+    }
+    const putChunk = (
+      blob: Blob,
+      extra: { uploadId?: string; offset?: number; total?: number },
+      onProgress?: (loaded: number, total: number) => void,
+    ): Promise<unknown> => {
+      const qs = new URLSearchParams({
+        dir: opts.dir || '',
+        name: opts.name || 'upload',
+      });
+      if (extra.uploadId) qs.set('uploadId', extra.uploadId);
+      if (typeof extra.offset === 'number') qs.set('offset', String(extra.offset));
+      if (typeof extra.total === 'number') qs.set('total', String(extra.total));
+      const url = `/api/agents/${encodeURIComponent(id)}/files/raw?${qs.toString()}`;
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', url);
+        xhr.withCredentials = true;
+        xhr.timeout = 0;
+        xhr.setRequestHeader('accept', 'application/json');
+        const mime = (opts.file && 'type' in opts.file && opts.file.type)
+          ? String(opts.file.type)
+          : 'application/octet-stream';
+        xhr.setRequestHeader('content-type', mime);
+        xhr.upload.onprogress = (ev: ProgressEvent) => {
+          if (!onProgress) return;
+          const partTotal = ev.lengthComputable ? ev.total : blob.size || 0;
+          onProgress(ev.loaded, partTotal);
+        };
+        xhr.onload = () => {
+          const txt = xhr.responseText || '';
+          let data: unknown = null;
+          if (txt) {
+            try { data = JSON.parse(txt); } catch { data = txt; }
+          }
+          if (xhr.status < 200 || xhr.status >= 300) {
+            const msg = (data && typeof data === 'object' && ('error' in (data as object) || 'message' in (data as object)))
+              ? String((data as { error?: unknown; message?: unknown }).error
+                      ?? (data as { message?: unknown }).message)
+              : (xhr.status === 413 ? 'File is too large for this network path' : `HTTP ${xhr.status}`);
+            const err = new Error(msg) as ApiError;
+            err.status = xhr.status;
+            err.body = data;
+            reject(err);
+            return;
+          }
+          resolve(data);
+        };
+        xhr.onerror = () => reject(new Error('Upload failed (network)'));
+        xhr.onabort = () => reject(new Error('Upload cancelled'));
+        xhr.send(blob);
+      });
+    };
+
+    if (!total || total <= chunkSize) {
+      return putChunk(file, {}, (loaded, partTotal) => {
+        opts.onProgress?.(loaded, partTotal || total || loaded);
+      });
+    }
+    const uploadId = (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function')
+      ? globalThis.crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    let offset = 0;
+    let last: unknown = null;
+    while (offset < total) {
+      const end = Math.min(offset + chunkSize, total);
+      const blob = file.slice(offset, end);
+      const base = offset;
+      last = await putChunk(blob, { uploadId, offset, total }, (loaded) => {
+        opts.onProgress?.(base + loaded, total);
+      });
+      offset = end;
+    }
+    return last;
+  },
+
   trace:        (id: string): Promise<unknown> => request('GET', `/api/agents/${encodeURIComponent(id)}/trace`),
 
   terminals: {
@@ -126,6 +266,9 @@ export const api = {
 
   getSettings:  (): Promise<unknown> => request('GET',    '/api/settings'),
   patchSettings:(body: Record<string, unknown>): Promise<unknown> => request('PATCH', '/api/settings', body),
+  authStatus:   (): Promise<unknown> => request('GET',    '/api/auth'),
+  saveOidc:     (body: Record<string, unknown>): Promise<unknown> => request('PATCH', '/api/auth/oidc', body),
+  saveBasic:    (body: Record<string, unknown>): Promise<unknown> => request('PATCH', '/api/auth/basic', body),
 
   mcp: {
     list:     (): Promise<unknown>      => request('GET',    '/api/system/mcp'),
@@ -181,6 +324,12 @@ export const api = {
     get:      (): Promise<unknown>      => request('GET',  '/api/system/models'),
   },
 
+  grokFeatures: {
+    get: (): Promise<unknown> => request('GET', '/api/system/grok-features'),
+    set: (body: { subagentModelInheritance: boolean }): Promise<unknown> =>
+      request('POST', '/api/system/grok-features', body),
+  },
+
   systemAgents: {
     read:         (p: string): Promise<unknown>                  => request('GET',  `/api/system/agents/read?path=${encodeURIComponent(p || '')}`),
     saveContent:  (p: string, content: string): Promise<unknown> => request('PUT',  '/api/system/agents/content', { path: p, content }),
@@ -215,6 +364,10 @@ export const api = {
   agents: {
     setFolder: (agentId: string, folderId: string | null): Promise<unknown> =>
       request('PUT', `/api/agents/${encodeURIComponent(agentId)}/folder`, { folderId }),
+  },
+
+  workflows: {
+    list: (): Promise<unknown> => request('GET', '/api/system/workflows'),
   },
 
   worktrees: {

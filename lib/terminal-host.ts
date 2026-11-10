@@ -156,14 +156,24 @@ export function createTerminalHost({ getCwd }: TerminalHostOptions): TerminalHos
     return { terminalId };
   }
 
-  function getOrThrow(id: string | undefined): TerminalRec {
-    const t = id ? terminals.get(id) : undefined;
-    if (!t) throw rpcError(-32004, `unknown terminalId: ${id}`);
-    return t;
+  const GONE_EXIT: ExitStatus = { exitCode: 1, signal: 'SIGTERM' };
+
+  function get(id: string | undefined): TerminalRec | undefined {
+    return id ? terminals.get(id) : undefined;
   }
 
   async function output(params: { terminalId?: string }): Promise<TerminalOutputResult> {
-    const t = getOrThrow(params?.terminalId);
+    const t = get(params?.terminalId);
+    if (!t) {
+      // After grok-remote restart the hold still has the old terminalId
+      // but this process's map is empty. Treat as already ended so grok
+      // can finish the tool instead of throwing unknown terminalId.
+      return {
+        output: '[terminal-host] terminal ended after reconnect\n',
+        truncated: false,
+        exitStatus: GONE_EXIT,
+      };
+    }
     return {
       output: t.buffer.toString('utf8'),
       truncated: t.truncated,
@@ -172,14 +182,15 @@ export function createTerminalHost({ getCwd }: TerminalHostOptions): TerminalHos
   }
 
   async function waitForExit(params: { terminalId?: string }): Promise<{ exitStatus: ExitStatus | null }> {
-    const t = getOrThrow(params?.terminalId);
+    const t = get(params?.terminalId);
+    if (!t) return { exitStatus: GONE_EXIT };
     if (t.exited) return { exitStatus: t.exitStatus };
     return new Promise((resolve) => t.waiters.push(resolve));
   }
 
   async function kill(params: { terminalId?: string }): Promise<Record<string, never>> {
-    const t = getOrThrow(params?.terminalId);
-    killTerm(t);
+    const t = get(params?.terminalId);
+    if (t) killTerm(t);
     return {};
   }
 

@@ -129,7 +129,7 @@ export function setupImageAttach(
         const rm = document.createElement('button');
         rm.type = 'button';
         rm.className = 'attach-pill-remove';
-        rm.setAttribute('aria-label', 'remove attachment');
+        rm.setAttribute('aria-label', 'Remove attachment');
         rm.textContent = 'x';
         rm.addEventListener('click', (ev: MouseEvent) => {
           ev.preventDefault();
@@ -168,7 +168,7 @@ export function setupImageAttach(
     return await new Promise<string>((resolve, reject) => {
       const r = new FileReader();
       r.onload = (): void => resolve(String(r.result || ''));
-      r.onerror = (): void => reject(r.error || new Error('read failed'));
+      r.onerror = (): void => reject(r.error || new Error('Read failed'));
       r.readAsDataURL(blob);
     });
   }

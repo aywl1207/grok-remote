@@ -177,7 +177,7 @@ export function mount(container: HTMLElement): void {
         </div>
         <button type="button" class="health-recheck-btn" data-role="recheck">
           <span class="health-recheck-spinner" data-role="recheck-spinner" aria-hidden="true"></span>
-          <span data-role="recheck-label">recheck</span>
+          <span data-role="recheck-label">Recheck</span>
         </button>
       </header>
 
@@ -185,21 +185,21 @@ export function mount(container: HTMLElement): void {
         <article class="health-card" data-card="version">
           <header class="health-card-head">version</header>
           <div class="health-card-body" data-role="version-body">
-            <p class="health-status">loading...</p>
+            <p class="health-status">Loading…</p>
           </div>
         </article>
 
         <article class="health-card" data-card="update">
           <header class="health-card-head">update</header>
           <div class="health-card-body" data-role="update-body">
-            <p class="health-status">loading...</p>
+            <p class="health-status">Loading…</p>
           </div>
         </article>
 
         <article class="health-card" data-card="server">
           <header class="health-card-head">server</header>
           <div class="health-card-body" data-role="server-body">
-            <p class="health-status">loading...</p>
+            <p class="health-status">Loading…</p>
           </div>
         </article>
       </div>
@@ -248,7 +248,7 @@ async function recheck(root: HTMLElement, alive: () => boolean): Promise<void> {
   const label = root.querySelector<HTMLElement>('[data-role="recheck-label"]');
   if (btn) btn.disabled = true;
   if (btn) btn.dataset.busy = '1';
-  if (label) label.textContent = 'rechecking...';
+  if (label) label.textContent = 'Rechecking…';
   setLoading(root);
   try {
     const data = await api.systemHealth.recheck() as HealthPayload;
@@ -263,17 +263,17 @@ async function recheck(root: HTMLElement, alive: () => boolean): Promise<void> {
       btn.disabled = false;
       delete btn.dataset.busy;
     }
-    if (alive() && label) label.textContent = 'recheck';
+    if (alive() && label) label.textContent = 'Recheck';
   }
 }
 
 function setLoading(root: HTMLElement): void {
   for (const sel of ['version-body', 'update-body', 'server-body']) {
     const el = root.querySelector<HTMLElement>(`[data-role="${sel}"]`);
-    if (el) el.innerHTML = '<p class="health-status">loading...</p>';
+    if (el) el.innerHTML = '<p class="health-status">Loading…</p>';
   }
   const insp = root.querySelector<HTMLElement>('[data-role="inspect-root"]');
-  if (insp) insp.innerHTML = '<p class="health-status">loading inspect...</p>';
+  if (insp) insp.innerHTML = '<p class="health-status">Loading inspect…</p>';
   const err = root.querySelector<HTMLElement>('[data-role="error"]');
   if (err) { err.hidden = true; err.textContent = ''; }
 }
@@ -299,7 +299,7 @@ function renderLastUpdated(root: HTMLElement): void {
   if (!el) return;
   if (!lastUpdatedAt) { el.hidden = true; return; }
   el.hidden = false;
-  el.textContent = `last checked ${fmtTimestamp(lastUpdatedAt)}`;
+  el.textContent = `Last checked ${fmtTimestamp(lastUpdatedAt)}`;
 }
 
 function renderInspect(host: HTMLElement | null, inspect: InspectRecord | undefined, errMsg: string | undefined): void {
@@ -336,7 +336,7 @@ function renderInspect(host: HTMLElement | null, inspect: InspectRecord | undefi
   );
   if (Object.keys(extras).length) {
     host.appendChild(buildSection({
-      title: 'other',
+      title: 'Other',
       count: Object.keys(extras).length,
       buildBody: () => {
         const pre = document.createElement('pre');
@@ -353,7 +353,7 @@ function buildIdentity(inspect: InspectRecord): HTMLElement {
   card.className = 'health-identity';
   const head = document.createElement('header');
   head.className = 'health-identity-head';
-  head.textContent = 'identity';
+  head.textContent = 'Identity';
   card.appendChild(head);
 
   const body = document.createElement('div');
@@ -415,7 +415,7 @@ function buildPermissions(perm: PermissionsRecord | undefined): HTMLElement {
   const loaded = typeof p.loaded === 'number' ? p.loaded : null;
 
   return buildSection({
-    title: 'permissions',
+    title: 'Permissions',
     count: loaded == null ? sources.length : loaded,
     countLabel: loaded == null ? null : `${loaded} loaded`,
     buildBody: () => {
@@ -424,7 +424,7 @@ function buildPermissions(perm: PermissionsRecord | undefined): HTMLElement {
 
       const kv = document.createElement('dl');
       kv.className = 'health-kv';
-      const dtL = document.createElement('dt'); dtL.textContent = 'loaded';
+      const dtL = document.createElement('dt'); dtL.textContent = 'Loaded';
       const ddL = document.createElement('dd'); ddL.textContent = loaded == null ? '(unknown)' : String(loaded);
       kv.append(dtL, ddL);
       wrap.appendChild(kv);
@@ -468,7 +468,7 @@ function buildPermissions(perm: PermissionsRecord | undefined): HTMLElement {
 function buildProjectInstructions(itemsIn: unknown[] | undefined): HTMLElement {
   const items = Array.isArray(itemsIn) ? itemsIn : [];
   return buildSection({
-    title: 'project instructions',
+    title: 'Project instructions',
     count: items.length,
     buildBody: () => {
       if (!items.length) return dimText('(none)');
@@ -494,7 +494,7 @@ function buildProjectInstructions(itemsIn: unknown[] | undefined): HTMLElement {
 function buildHooks(hooksIn: HookRecord[] | undefined): HTMLElement {
   const hooks = Array.isArray(hooksIn) ? hooksIn : [];
   return buildSection({
-    title: 'hooks',
+    title: 'Hooks',
     count: hooks.length,
     buildBody: () => {
       if (!hooks.length) return dimText('(none)');
@@ -510,8 +510,8 @@ function buildHooks(hooksIn: HookRecord[] | undefined): HTMLElement {
             h.source?.plugin_name ? `plugin: ${h.source.plugin_name}` : null,
           ],
           sourceLabel: h.source?.plugin_name
-            ? `from plugin: ${h.source.plugin_name}`
-            : (h.source?.type ? `defined in: ${h.source.type}` : 'defined in:'),
+            ? `From plugin: ${h.source.plugin_name}`
+            : (h.source?.type ? `Defined in: ${h.source.type}` : 'Defined in:'),
           sourcePath: h.source?.path || h.target || '',
           fullRecord: h,
         }));
@@ -524,7 +524,7 @@ function buildHooks(hooksIn: HookRecord[] | undefined): HTMLElement {
 function buildSkills(skillsIn: SkillRecord[] | undefined): HTMLElement {
   const skills = Array.isArray(skillsIn) ? skillsIn : [];
   return buildSection({
-    title: 'skills',
+    title: 'Skills',
     count: skills.length,
     buildBody: () => {
       if (!skills.length) return dimText('(none)');
@@ -532,15 +532,15 @@ function buildSkills(skillsIn: SkillRecord[] | undefined): HTMLElement {
       list.className = 'health-item-list';
       for (const s of skills) {
         list.appendChild(buildItem({
-          primary: s.name || '(unnamed)',
+          primary: s.name || '(Unnamed)',
           secondary: s.source?.type ? scopeLabel(s.source.type) : '',
           tags: [
-            s.userInvocable ? 'user-invocable' : null,
+            s.userInvocable ? 'User-invocable' : null,
           ],
           description: s.description || '',
           sourceLabel: s.source?.plugin_name
-            ? `from plugin: ${s.source.plugin_name}`
-            : (s.source?.type ? `from ${scopeLabel(s.source.type)}:` : 'from:'),
+            ? `From plugin: ${s.source.plugin_name}`
+            : (s.source?.type ? `From ${scopeLabel(s.source.type)}:` : 'From:'),
           sourcePath: s.source?.path || '',
           fullRecord: s,
         }));
@@ -553,7 +553,7 @@ function buildSkills(skillsIn: SkillRecord[] | undefined): HTMLElement {
 function buildAgents(agentsIn: AgentRecord[] | undefined): HTMLElement {
   const agents = Array.isArray(agentsIn) ? agentsIn : [];
   return buildSection({
-    title: 'agents',
+    title: 'Agents',
     count: agents.length,
     buildBody: () => {
       if (!agents.length) return dimText('(none)');
@@ -561,7 +561,7 @@ function buildAgents(agentsIn: AgentRecord[] | undefined): HTMLElement {
       list.className = 'health-item-list';
       for (const a of agents) {
         list.appendChild(buildItem({
-          primary: a.name || '(unnamed)',
+          primary: a.name || '(Unnamed)',
           secondary: a.source?.type ? scopeLabel(a.source.type) : '',
           tags: [
             a.model ? `model: ${a.model}` : null,
@@ -569,8 +569,8 @@ function buildAgents(agentsIn: AgentRecord[] | undefined): HTMLElement {
           ],
           description: a.description || a.systemPrompt || '',
           sourceLabel: a.source?.plugin_name
-            ? `from plugin: ${a.source.plugin_name}`
-            : (a.source?.type ? `from ${scopeLabel(a.source.type)}:` : 'from:'),
+            ? `From plugin: ${a.source.plugin_name}`
+            : (a.source?.type ? `From ${scopeLabel(a.source.type)}:` : 'From:'),
           sourcePath: a.source?.path || '',
           fullRecord: a,
         }));
@@ -590,7 +590,7 @@ function buildPlugins(pluginsIn: PluginRecord[] | undefined): HTMLElement {
   });
 
   return buildSection({
-    title: 'plugins',
+    title: 'Plugins',
     count: plugins.length,
     buildBody: () => {
       if (!plugins.length) return dimText('(none)');
@@ -606,11 +606,11 @@ function buildPlugins(pluginsIn: PluginRecord[] | undefined): HTMLElement {
         if (provides.mcpServers) tags.push(`mcp: ${provides.mcpServers}`);
         if (provides.hooks)      tags.push('hooks');
         list.appendChild(buildItem({
-          primary: p.name || '(unnamed)',
-          secondary: p.enabled === false ? 'disabled' : 'enabled',
+          primary: p.name || '(Unnamed)',
+          secondary: p.enabled === false ? 'Disabled' : 'Enabled',
           secondaryClass: p.enabled === false ? 'health-warn' : 'health-good',
           tags,
-          sourceLabel: p.scope ? `installed in ${scopeLabel(p.scope)}:` : 'installed at:',
+          sourceLabel: p.scope ? `Installed in ${scopeLabel(p.scope)}:` : 'Installed at:',
           sourcePath: p.path || '',
           fullRecord: p,
         }));
@@ -623,7 +623,7 @@ function buildPlugins(pluginsIn: PluginRecord[] | undefined): HTMLElement {
 function buildMarketplaces(itemsIn: MarketplaceRecord[] | undefined): HTMLElement {
   const items = Array.isArray(itemsIn) ? itemsIn : [];
   return buildSection({
-    title: 'marketplaces',
+    title: 'Marketplaces',
     count: items.length,
     buildBody: () => {
       if (!items.length) return dimText('(none)');
@@ -649,7 +649,7 @@ function buildMarketplaces(itemsIn: MarketplaceRecord[] | undefined): HTMLElemen
 function buildMcpServers(serversIn: McpServerRecord[] | undefined): HTMLElement {
   const servers = Array.isArray(serversIn) ? serversIn : [];
   return buildSection({
-    title: 'mcp servers',
+    title: 'MCP servers',
     count: servers.length,
     buildBody: () => {
       if (!servers.length) return dimText('(none)');
@@ -659,7 +659,7 @@ function buildMcpServers(serversIn: McpServerRecord[] | undefined): HTMLElement 
         const transport = s.transport || s.type || (s.url ? 'http' : 'stdio');
         const target = s.url || s.command || (Array.isArray(s.args) ? s.args.join(' ') : '');
         list.appendChild(buildItem({
-          primary: s.name || '(unnamed)',
+          primary: s.name || '(Unnamed)',
           secondary: transport,
           tags: [
             s.scope ? scopeLabel(s.scope) : null,
@@ -677,7 +677,7 @@ function buildMcpServers(serversIn: McpServerRecord[] | undefined): HTMLElement 
 function buildLspServers(serversIn: LspServerRecord[] | undefined): HTMLElement {
   const servers = Array.isArray(serversIn) ? serversIn : [];
   return buildSection({
-    title: 'lsp servers',
+    title: 'LSP servers',
     count: servers.length,
     buildBody: () => {
       if (!servers.length) return dimText('(none)');
@@ -830,7 +830,7 @@ function buildItem(opts: BuildItemOpts): HTMLElement {
   const toggle = document.createElement('button');
   toggle.type = 'button';
   toggle.className = 'health-item-toggle';
-  toggle.textContent = 'show json';
+  toggle.textContent = 'Show JSON';
   head.appendChild(toggle);
 
   card.appendChild(head);
@@ -860,15 +860,15 @@ function buildItem(opts: BuildItemOpts): HTMLElement {
       const copyBtn = document.createElement('button');
       copyBtn.type = 'button';
       copyBtn.className = 'health-copy-btn';
-      copyBtn.textContent = 'copy';
-      copyBtn.title = 'copy path to clipboard';
+      copyBtn.textContent = 'Copy';
+      copyBtn.title = 'Copy path to clipboard';
       copyBtn.addEventListener('click', (ev) => {
         ev.stopPropagation();
         void (async () => {
           try {
             await navigator.clipboard.writeText(finalPath);
-            copyBtn.textContent = 'copied';
-            setTimeout(() => { copyBtn.textContent = 'copy'; }, 1200);
+            copyBtn.textContent = 'Copied';
+            setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1200);
           } catch { /* ignore */ }
         })();
       });
@@ -884,7 +884,7 @@ function buildItem(opts: BuildItemOpts): HTMLElement {
 
   toggle.addEventListener('click', () => {
     const hidden = body.classList.toggle('hidden');
-    toggle.textContent = hidden ? 'show json' : 'hide json';
+    toggle.textContent = hidden ? 'Show JSON' : 'Hide JSON';
   });
 
   return card;
@@ -977,17 +977,17 @@ function renderUpdate(host: HTMLElement | null, update: UpdateRecord | undefined
   const dl = document.createElement('dl');
   dl.className = 'health-kv';
   if (current) {
-    const dt = document.createElement('dt'); dt.textContent = 'current';
+    const dt = document.createElement('dt'); dt.textContent = 'Current';
     const dd = document.createElement('dd'); dd.textContent = stringify(current);
     dl.append(dt, dd);
   }
   if (latest) {
-    const dt = document.createElement('dt'); dt.textContent = 'latest';
+    const dt = document.createElement('dt'); dt.textContent = 'Latest';
     const dd = document.createElement('dd'); dd.textContent = stringify(latest);
     dl.append(dt, dd);
   }
   if (channel) {
-    const dt = document.createElement('dt'); dt.textContent = 'channel';
+    const dt = document.createElement('dt'); dt.textContent = 'Channel';
     const dd = document.createElement('dd'); dd.textContent = stringify(channel);
     dl.append(dt, dd);
   }
@@ -1002,16 +1002,16 @@ function renderUpdate(host: HTMLElement | null, update: UpdateRecord | undefined
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'health-copy-btn';
-    btn.textContent = 'copy';
+    btn.textContent = 'Copy';
     btn.addEventListener('click', () => {
       void (async () => {
         try {
           await navigator.clipboard.writeText('grok update');
-          btn.textContent = 'copied';
-          setTimeout(() => { btn.textContent = 'copy'; }, 1500);
+          btn.textContent = 'Copied';
+          setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
         } catch {
-          btn.textContent = 'copy failed';
-          setTimeout(() => { btn.textContent = 'copy'; }, 1500);
+          btn.textContent = 'Copy failed';
+          setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
         }
       })();
     });

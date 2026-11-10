@@ -17,6 +17,7 @@ interface SessionsState {
   raw: string;
   items: SessionItem[];
   agentIds: Set<string>;
+  agentBySession: Map<string, string>;
   toast: string;
   toastTimer: number;
 }
@@ -33,6 +34,7 @@ function freshState(): SessionsState {
     raw: '',
     items: [],
     agentIds: new Set(),
+    agentBySession: new Map(),
     toast: '',
     toastTimer: 0,
   };
@@ -61,13 +63,17 @@ async function loadAgents(): Promise<void> {
   try {
     const list = await api.listAgents() as Array<{ id?: string; sessionId?: string }> | null;
     const ids = new Set<string>();
+    const bySession = new Map<string, string>();
     if (Array.isArray(list)) {
       for (const a of list) {
-        if (a && typeof a.sessionId === 'string' && a.sessionId) ids.add(a.sessionId);
-        if (a && typeof a.id === 'string' && a.id) ids.add(a.id);
+        if (a && typeof a.id === 'string' && a.id) {
+          ids.add(a.id);
+          if (typeof a.sessionId === 'string' && a.sessionId) bySession.set(a.sessionId, a.id);
+        }
       }
     }
     state.agentIds = ids;
+    state.agentBySession = bySession;
     if (activeContainer) render();
   } catch {
     /* non-fatal */
@@ -106,9 +112,9 @@ function showToast(msg: string): void {
 async function copyId(sid: string): Promise<void> {
   try {
     await navigator.clipboard.writeText(sid);
-    showToast(`copied ${sid.slice(0, 8)}...`);
+    showToast(`Copied ${sid.slice(0, 8)}…`);
   } catch {
-    showToast('copy failed');
+    showToast('Copy failed');
   }
 }
 
@@ -131,12 +137,13 @@ function render(): void {
   if (!activeContainer) return;
   const rowsHtml = state.items.length
     ? state.items.map((it) => {
-        const hasAgent = state.agentIds.has(it.sessionId);
+        const agentId = state.agentBySession.get(it.sessionId) || (state.agentIds.has(it.sessionId) ? it.sessionId : "");
+        const hasAgent = !!agentId;
         const btnHtml = hasAgent
-          ? `<button class="sessions-use" data-sid="${escapeHtml(it.sessionId)}" type="button">use in dashboard</button>`
+          ? `<button class="sessions-use" data-sid="${escapeHtml(agentId)}" type="button">Use in Dashboard</button>`
           : `<button class="sessions-use sessions-use--disabled" data-sid="${escapeHtml(it.sessionId)}" type="button"
-                   title="this session was created in the grok TUI, not in this dashboard. import it first.">
-               import first
+                   title="This session was created in the Grok TUI, not in this dashboard. Import it first.">
+               Import First
              </button>`;
         return `
           <tr class="sessions-row" data-sid="${escapeHtml(it.sessionId)}">
@@ -157,15 +164,15 @@ function render(): void {
     <section class="system-page sessions-page">
       <h2 class="system-page-title">Sessions</h2>
       <p class="system-page-sub">
-        wraps <code>grok sessions list</code> and <code>grok sessions search</code>.
-        click a row to copy its session id.
+        Wraps <code>grok sessions list</code> and <code>grok sessions search</code>.
+        Click a row to copy its session ID.
       </p>
 
       <div class="sessions-controls">
         <input
           type="text"
           class="sessions-q"
-          placeholder="search sessions..."
+          placeholder="Search sessions…"
           value="${escapeHtml(state.q)}"
         />
         <input
@@ -175,9 +182,9 @@ function render(): void {
           max="200"
           step="1"
           value="${escapeHtml(String(state.limit))}"
-          title="max rows to return"
+          title="Max rows to return"
         />
-        <button class="sessions-refresh" type="button">${state.loading ? 'loading...' : 'refresh'}</button>
+        <button class="sessions-refresh" type="button">${state.loading ? 'Loading…' : 'Refresh'}</button>
         ${state.toast ? `<span class="sessions-toast">${escapeHtml(state.toast)}</span>` : ''}
       </div>
 
@@ -187,10 +194,10 @@ function render(): void {
         <table class="sessions-table">
           <thead>
             <tr>
-              <th>session id</th>
-              <th>created</th>
-              <th>status</th>
-              <th>summary</th>
+              <th>Session ID</th>
+              <th>Created</th>
+              <th>Status</th>
+              <th>Summary</th>
               <th></th>
             </tr>
           </thead>
@@ -198,7 +205,7 @@ function render(): void {
         </table>
         ${empty ? `
           <div class="sessions-empty">
-            no sessions matched. try a broader query, or check
+            No sessions matched. Try a broader query, or check
             <code>grok sessions list</code> in a terminal.
           </div>
         ` : ''}
@@ -206,7 +213,7 @@ function render(): void {
 
       ${hasRaw ? `
         <details class="sessions-raw">
-          <summary>raw output</summary>
+          <summary>Raw output</summary>
           <pre>${escapeHtml(state.raw)}</pre>
         </details>
       ` : ''}

@@ -52,22 +52,22 @@ export function unmount(): void {
 async function reload(section: HTMLElement): Promise<void> {
   const { inspect, error } = await loadInspect();
   if (aborted) return;
-  if (error) { setStatusLine(section, 'failed to load: ' + error); return; }
+  if (error) { setStatusLine(section, 'Failed to load: ' + error); return; }
 
   const data = (inspect && typeof inspect === 'object') ? inspect as InspectShape : {};
   const items = Array.isArray(data.marketplaces) ? data.marketplaces : [];
   const cs = data.configSources || {};
   const banner: ConfigFile[] = [
-    ...(cs.userPath ? [{ label: 'user config', path: cs.userPath }] : []),
-    ...(Array.isArray(cs.projectPaths) ? cs.projectPaths.map((p) => ({ label: 'project config', path: p })) : []),
+    ...(cs.userPath ? [{ label: 'User config', path: cs.userPath }] : []),
+    ...(Array.isArray(cs.projectPaths) ? cs.projectPaths.map((p) => ({ label: 'Project config', path: p })) : []),
   ];
   addConfigFilesBanner(section, banner);
   clearBody(section);
 
   if (!items.length) {
     section.appendChild(emptyState({
-      message: 'no marketplaces configured yet.',
-      hint: 'add one via the CLI: grok plugins marketplace add <url>',
+      message: 'No marketplaces configured yet.',
+      hint: 'Add one via the CLI: grok plugins marketplace add <url>',
     }));
     section.appendChild(buildFooterHint(
       'A marketplace is just a manifest pointing at a set of plugins. ' +
@@ -104,23 +104,23 @@ function makeMarketplaceCard(m: Marketplace): HTMLElement {
   if (m.url) {
     const url = m.url;
     actions.push({
-      label: 'copy url',
+      label: 'Copy URL',
       onClick: async (ev: MouseEvent): Promise<void> => {
         const ok = await copyToClipboard(url);
         const btn = ev.currentTarget as HTMLButtonElement;
         const prior = btn.textContent;
-        btn.textContent = ok ? 'copied' : 'copy failed';
+        btn.textContent = ok ? 'Copied' : 'Copy failed';
         setTimeout(() => { btn.textContent = prior; }, 1500);
       },
     });
   }
 
   return buildItem({
-    primary: m.name || m.id || '(unnamed)',
-    secondary: m.url ? 'remote' : 'local',
+    primary: m.name || m.id || '(Unnamed)',
+    secondary: m.url ? 'Remote' : 'Local',
     tags,
     path: shortenPath(m.url || m.path || ''),
-    sourceLabel: m.scope ? `registered in ${scopeLabel(m.scope)}:` : 'source:',
+    sourceLabel: m.scope ? `Registered in ${scopeLabel(m.scope)}:` : 'Source:',
     sourcePath: m.path || m.url || '',
     fullRecord: m,
     actions,

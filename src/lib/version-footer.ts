@@ -41,22 +41,22 @@ export function installVersionFooter({ host }: InstallVersionFooterOptions = {})
   leftEl = el('button', {
     type: 'button',
     class: 'app-footer__left app-footer__left--btn',
-    title: 'view changelog',
-    'aria-label': 'view changelog',
+    title: 'View changelog',
+    'aria-label': 'View changelog',
     onclick: () => {
       const version = (currentInfo && currentInfo.version) ||
         (typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '');
       openChangelogModal({ currentVersion: version });
     },
   },
-    el('span', { class: 'app-footer__brand' }, 'grok-remote'),
+    el('span', { class: 'app-footer__brand' }, 'Grok Remote'),
     el('span', { class: 'app-footer__version' }, 'v?'),
     el('span', { class: 'app-footer__sep' }, '·'),
-    el('span', { class: 'app-footer__sha', title: 'git sha' }, '...'),
+    el('span', { class: 'app-footer__sha', title: 'Git SHA' }, '...'),
   ) as HTMLButtonElement;
 
   centerEl = el('div', { class: 'app-footer__center' },
-    el('span', { class: 'app-footer__disclaimer' }, 'not affiliated with xAI, grok, or Tailscale'),
+    el('span', { class: 'app-footer__disclaimer' }, 'Not affiliated with xAI or Grok'),
     el('span', { class: 'app-footer__sep' }, '·'),
     el('a', {
       class: 'app-footer__credit',
@@ -103,7 +103,7 @@ async function refreshLatest(): Promise<void> {
       latestInfo = data;
       paint();
     } else if (data) {
-      latestInfo = { ok: false, error: (data as { error?: string }).error || 'fetch failed' };
+      latestInfo = { ok: false, error: (data as { error?: string }).error || 'Fetch failed' };
       paint();
     }
   } catch (err) {
@@ -124,21 +124,21 @@ function paint(): void {
   const shaEl = leftEl.querySelector('.app-footer__sha') as HTMLElement | null;
   if (shaEl) {
     shaEl.textContent = sha ? `${sha}${dirty ? '*' : ''}` : '';
-    shaEl.title = sha && currentInfo ? `${currentInfo.gitSha}${dirty ? ' (working tree dirty)' : ''}` : 'git sha';
+    shaEl.title = sha && currentInfo ? `${currentInfo.gitSha}${dirty ? ' (working tree dirty)' : ''}` : 'Git SHA';
   }
 
   rightEl.replaceChildren();
 
   if (!latestInfo) {
-    rightEl.appendChild(el('span', { class: 'app-footer__hint' }, 'checking for updates...'));
+    rightEl.appendChild(el('span', { class: 'app-footer__hint' }, 'Checking for updates…'));
     return;
   }
   if (!latestInfo.ok) {
     rightEl.appendChild(el('span', {
       class: 'app-footer__hint app-footer__hint--warn',
       title: latestInfo.error || '',
-    }, 'update check failed'));
-    rightEl.appendChild(makeIconBtn('refresh-cw', 'retry', () => {
+    }, 'Update check failed'));
+    rightEl.appendChild(makeIconBtn('refresh-cw', 'Retry', () => {
       latestInfo = null;
       paint();
       void refreshLatest();
@@ -151,24 +151,24 @@ function paint(): void {
   if (behind === 0 && ahead === 0) {
     rightEl.appendChild(el('span', { class: 'app-footer__hint app-footer__hint--ok' },
       el('span', { class: 'app-footer__hint-ico', html: iconHtml('check') }),
-      el('span', { class: 'app-footer__hint-label' }, 'up to date'),
+      el('span', { class: 'app-footer__hint-label' }, 'Up to date'),
     ));
     return;
   }
   if (behind === 0 && ahead > 0) {
     rightEl.appendChild(el('span', { class: 'app-footer__hint' },
-      `local is ${ahead} ahead of origin/main`));
+      `Local is ${ahead} ahead of origin/main`));
     return;
   }
   const txt = `${behind} commit${behind === 1 ? '' : 's'} behind`;
   rightEl.appendChild(el('span', { class: 'app-footer__hint app-footer__hint--avail' },
     el('span', { class: 'app-footer__hint-dot' }),
-    el('span', { class: 'app-footer__hint-label' }, `update available · ${txt}`),
+    el('span', { class: 'app-footer__hint-label' }, `Update available · ${txt}`),
   ));
   updateBtn = el('button', {
     type: 'button',
     class: 'btn app-footer__update-btn',
-    title: 'pull origin/main, build, and restart',
+    title: 'Pull origin/main, build, and restart',
     onclick: () => {
       // latestInfo is narrowed to the available-update branch upstream of
       // this click handler, but TS can't see it through the closure.
@@ -176,7 +176,7 @@ function paint(): void {
     },
   },
     el('span', { class: 'app-footer__update-ico', html: iconHtml('refresh-cw') }),
-    el('span', { class: 'app-footer__update-label' }, 'update now'),
+    el('span', { class: 'app-footer__update-label' }, 'Update now'),
   ) as HTMLButtonElement;
   rightEl.appendChild(updateBtn);
 }
@@ -209,8 +209,8 @@ function maybeShowJustUpdatedToast(): void {
   } catch { /* ignore */ }
 
   const text = prev && prev !== justUpdated
-    ? `updated to v${justUpdated} (from v${prev})`
-    : `updated to v${justUpdated}`;
+    ? `Updated to v${justUpdated} (from v${prev})`
+    : `Updated to v${justUpdated}`;
 
   const toast = el('div', { class: 'app-footer-toast' }, text);
   document.body.appendChild(toast);

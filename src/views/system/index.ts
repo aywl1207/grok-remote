@@ -15,6 +15,8 @@ import * as nativeAgents from './agents.js';
 import * as plugins      from './plugins.js';
 import * as marketplaces from './marketplaces.js';
 import * as lsp          from './lsp.js';
+import * as access       from './access.js';
+import * as workflows    from './workflows.js';
 
 export interface PageModule {
   mount?(container: HTMLElement, ctx?: unknown): void;
@@ -34,38 +36,46 @@ export interface SettingsSection {
 }
 
 export const SYSTEM_PAGES: PageEntry[] = [
-  { area: 'memory',   label: 'memory',   iconName: 'memory',   module: memory   as PageModule },
-  { area: 'leaders',  label: 'leaders',  iconName: 'leaders',  module: leaders  as PageModule },
-  { area: 'sessions', label: 'sessions', iconName: 'sessions', module: sessions as PageModule },
-  { area: 'health',   label: 'health',   iconName: 'health',   module: health   as PageModule },
+  { area: 'memory',   label: 'Memory',   iconName: 'memory',   module: memory   as PageModule },
+  { area: 'leaders',  label: 'Leaders',  iconName: 'leaders',  module: leaders  as PageModule },
+  { area: 'sessions', label: 'Sessions', iconName: 'sessions', module: sessions as PageModule },
+  { area: 'health',   label: 'Health',   iconName: 'health',   module: health   as PageModule },
 ];
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
   {
-    title: 'general',
+    title: 'General',
     items: [
-      { area: 'general',  label: 'general',       iconName: 'settings' },
+      { area: 'general',  label: 'General',       iconName: 'settings' },
     ],
   },
   {
-    title: 'native config',
+    title: 'Access',
     items: [
-      { area: 'skills',       label: 'skills',       iconName: 'skills',   module: skills       as PageModule },
-      { area: 'subagents',    label: 'subagents',    iconName: 'leaders',  module: nativeAgents as PageModule },
-      { area: 'hooks',        label: 'hooks',        iconName: 'flow',     module: hooks        as PageModule },
-      { area: 'plugins',      label: 'plugins',      iconName: 'mcp',      module: plugins      as PageModule },
-      { area: 'marketplaces', label: 'marketplaces', iconName: 'import',   module: marketplaces as PageModule },
-      { area: 'mcp',          label: 'mcp servers',  iconName: 'mcp',      module: mcp          as PageModule },
-      { area: 'lsp',          label: 'lsp servers',  iconName: 'models',   module: lsp          as PageModule },
-      { area: 'models',       label: 'models',       iconName: 'models',   module: models       as PageModule },
+      { area: 'oauth',       label: 'OAuth',       iconName: 'globe',  module: access as PageModule },
+      { area: 'basic-auth',  label: 'Basic Auth',  iconName: 'lock',   module: access as PageModule },
     ],
   },
   {
-    title: 'tools',
+    title: 'Native config',
     items: [
-      { area: 'worktrees', label: 'worktrees', iconName: 'worktrees', module: worktrees as PageModule },
-      { area: 'import',    label: 'import',    iconName: 'import',    module: importV   as PageModule },
-      { area: 'setup',     label: 'setup',     iconName: 'setup',     module: setup     as PageModule },
+      { area: 'skills',       label: 'Skills',       iconName: 'skills',   module: skills       as PageModule },
+      { area: 'subagents',    label: 'Subagents',    iconName: 'leaders',  module: nativeAgents as PageModule },
+      { area: 'hooks',        label: 'Hooks',        iconName: 'flow',     module: hooks        as PageModule },
+      { area: 'plugins',      label: 'Plugins',      iconName: 'mcp',      module: plugins      as PageModule },
+      { area: 'marketplaces', label: 'Marketplaces', iconName: 'import',   module: marketplaces as PageModule },
+      { area: 'mcp',          label: 'MCP servers',  iconName: 'mcp',      module: mcp          as PageModule },
+      { area: 'lsp',          label: 'LSP servers',  iconName: 'models',   module: lsp          as PageModule },
+      { area: 'models',       label: 'Models',       iconName: 'models',   module: models       as PageModule },
+    ],
+  },
+  {
+    title: 'Tools',
+    items: [
+      { area: 'worktrees', label: 'Worktrees', iconName: 'worktrees', module: worktrees as PageModule },
+      { area: 'workflows', label: 'Workflows', iconName: 'flow',      module: workflows as PageModule },
+      { area: 'import',    label: 'Import',    iconName: 'import',    module: importV   as PageModule },
+      { area: 'setup',     label: 'Setup',     iconName: 'setup',     module: setup     as PageModule },
     ],
   },
 ];

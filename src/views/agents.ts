@@ -1,30 +1,43 @@
-// Agents sidebar: list + new + star + archive + folders.
+// Conversation sidebar: project picker + chats for the active project.
 //
-// Rows are intentionally compact: status dot + star + name + archive close. The
-// model badge, connect/disconnect link, and cwd path were moved off the row
-// (cwd is meant to land in the chat topbar; see CHAT_TOPBAR_TODO.md). Folders
-// are persisted server-side via /api/folders. Drag/drop uses Pointer Events so
-// the same code path works on desktop and touch.
+// Folders are a flat selectable list (no expand/collapse). Only the
+// active project's chats are painted. Drag a chat onto a project row to
+// move it.
 
 import { api } from '../lib/api.js';
 import { el } from '../lib/render.js';
 import { fmtTokens } from '../lib/format.js';
 import { computeSelection } from './agents-selection.js';
-
-const STATUS_LABEL: Record<string, string> = {
-  idle:         'idle',
-  running:      'running',
-  errored:      'errored',
-  killed:       'killed',
-  starting:     'starting',
-  disconnected: 'disconnected',
-  exited:       'disconnected',
-};
-
-const SORT_KEY        = 'grok-remote.sidebar.sort';
-const SEARCH_KEY      = 'grok-remote.sidebar.search';
-const COLLAPSED_KEY   = 'grok-remote.sidebar.collapsed-folders';
-const SORT_DEFAULT    = 'created_desc';
+import {
+  SIDEBAR_COPY,
+  rowStatusLabel,
+  rowStatusKey,
+} from '../lib/sidebar-row.js';
+import { sidebarDisplayStatus, applyWorkingOverlayRow, LOCAL_TURN_HOLD_MS } from '../../lib/agent-status.js';
+import {
+  SORTS,
+  loadSort, saveSort, loadSearch, saveSearch,
+  sortAgents, matchesSearch,
+} from './agents/sort.js';
+import { inferCwdForFolder } from '../lib/conversation-folder.js';
+import {
+  openNewChatDialog,
+  openForkChatDialog,
+  pickForkSourceId,
+  siblingCwdsForFolder,
+  saveLastFolderId,
+} from './agents/new-chat.js';
+import {
+  TOP_LEVEL_ID,
+  ARCHIVED_FOLDER_ID,
+  loadActiveFolderId,
+  saveActiveFolderId,
+  folderActivity,
+  sortProjects,
+  projectLiveWork,
+  projectMatchesSearch,
+  resolveActiveFolderId,
+} from './agents/folder-nav.js';
 // Touch needs a long-press because vertical drag is reserved for scrolling.
 // Mouse/pen activate drag immediately past a small horizontal move threshold.
 const LONG_PRESS_MS    = 450;
@@ -32,32 +45,6 @@ const MOUSE_DRAG_THRESH = 6;
 const TOUCH_MOVE_THRESH = 8;
 // A pointerup within this window with no movement counts as a plain click.
 const CLICK_MAX_MS = 250;
-
-interface SortConfig { label: string; cmp(a: Agent, b: Agent): number }
-
-const SORTS: Record<string, SortConfig> = {
-  created_desc:    { label: 'newest first',     cmp: (a, b) => (b.createdAt || '').localeCompare(a.createdAt || '') },
-  created_asc:     { label: 'oldest first',     cmp: (a, b) => (a.createdAt || '').localeCompare(b.createdAt || '') },
-  activity_desc:   { label: 'last active',      cmp: (a, b) => (b.lastSeen   || '').localeCompare(a.lastSeen   || '') },
-  name_asc:        { label: 'name (a -> z)',    cmp: (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }) },
-};
-
-function loadSort(): string { try { const v = localStorage.getItem(SORT_KEY); return v && SORTS[v] ? v : SORT_DEFAULT; } catch { return SORT_DEFAULT; } }
-function saveSort(v: string): void { try { localStorage.setItem(SORT_KEY, v); } catch { /* ignore */ } }
-function loadSearch(): string { try { return localStorage.getItem(SEARCH_KEY) || ''; } catch { return ''; } }
-function saveSearch(v: string): void { try { localStorage.setItem(SEARCH_KEY, v); } catch { /* ignore */ } }
-function loadCollapsed(): Set<string> {
-  try {
-    const raw = localStorage.getItem(COLLAPSED_KEY);
-    if (!raw) return new Set();
-    const arr = JSON.parse(raw) as unknown;
-    if (!Array.isArray(arr)) return new Set();
-    return new Set(arr.filter((x): x is string => typeof x === 'string'));
-  } catch { return new Set(); }
-}
-function saveCollapsed(set: Set<string>): void {
-  try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify(Array.from(set))); } catch { /* ignore */ }
-}
 
 export interface Agent {
   id: string;
@@ -71,6 +58,7 @@ export interface Agent {
   archived?: boolean;
   totalTokens?: number;
   inFlight?: number;
+  turnOpen?: boolean;
   [k: string]: unknown;
 }
 
@@ -83,15 +71,11 @@ export interface Folder {
   system?: boolean;
 }
 
-const ARCHIVED_FOLDER_ID = 'archived';
-
 export interface AgentsSidebarOptions {
   onSelect?: (id: string) => void;
   onCreate?: (created: Agent) => void;
   onDelete?: (id: string) => void;
 }
-
-const TOP_LEVEL_ID = '__top__';
 
 export class AgentsSidebar {
   onSelect?: (id: string) => void;
@@ -108,7 +92,7 @@ export class AgentsSidebar {
   pollHandle: ReturnType<typeof setInterval> | null;
   sortKey: string;
   search: string;
-  collapsed: Set<string>;
+  activeFolderId: string;
 
   activeList: HTMLElement;
   multiSelectFooter: HTMLElement;
@@ -126,8 +110,11 @@ export class AgentsSidebar {
 
   private _creating?: boolean;
   private _spawnHandlerWired?: boolean;
+  private _bootReady = false;
   private _agentsStream?: EventSource | null;
   private _sseAlive?: boolean;
+  private _workingUntil: Map<string, number> = new Map();
+  private _agentsRaw: Agent[] = [];
   private _onVisibility?: () => void;
 
   // Drag state (pointer-events based).
@@ -161,48 +148,48 @@ export class AgentsSidebar {
     this.pollHandle = null;
     this.sortKey = loadSort();
     this.search  = loadSearch();
-    this.collapsed = loadCollapsed();
+    this.activeFolderId = loadActiveFolderId() || TOP_LEVEL_ID;
 
     this.activeList = el('div', { class: 'agents-list' }) as HTMLElement;
     // Drop-target highlight should clear if the user drags out of the list.
     this.activeList.addEventListener('pointerleave', () => {
-      this.activeList.querySelectorAll('.folder-header--drop').forEach((n) =>
-        n.classList.remove('folder-header--drop'),
+      this.activeList.querySelectorAll('.project-row--drop').forEach((n) =>
+        n.classList.remove('project-row--drop'),
       );
     });
 
-    this.empty = el('div', { class: 'agents-empty' }, 'no agents yet') as HTMLElement;
-    this.noMatch = el('div', { class: 'agents-empty' }, 'no conversations match your search') as HTMLElement;
+    this.empty = el('div', { class: 'agents-empty' }, SIDEBAR_COPY.empty) as HTMLElement;
+    this.noMatch = el('div', { class: 'agents-empty' }, SIDEBAR_COPY.noMatch) as HTMLElement;
     this.error = el('div', { class: 'agents-empty agents-empty--err' }) as HTMLElement;
     this.error.hidden = true;
 
     this.newBtn = el('button', {
       class: 'agents-new-btn',
-      title: 'spawn a new agent (auto-named from the first message)',
-      onclick: () => void this.spawnNew(),
-    }, '+ new') as HTMLButtonElement;
+      title: SIDEBAR_COPY.newChatTitle,
+      onclick: () => this.openNewChat(),
+    }, SIDEBAR_COPY.newChat) as HTMLButtonElement;
 
     this.newFolderBtn = el('button', {
       class: 'agents-new-folder-btn',
       type: 'button',
-      title: 'create a new folder',
+      title: 'Create a new folder',
       onclick: () => void this.promptNewFolder(),
-    }, '+ folder') as HTMLButtonElement;
+    }, SIDEBAR_COPY.newFolder) as HTMLButtonElement;
 
     this.closeDrawerBtn = el('button', {
       class: 'sidebar-close',
       type: 'button',
-      title: 'close menu',
-      'aria-label': 'close menu',
+      title: 'Close menu',
+      'aria-label': 'Close menu',
       onclick: () => document.dispatchEvent(new CustomEvent('grok-remote:close-drawer')),
     }, '×') as HTMLButtonElement;
 
     this.searchInput = el('input', {
       class: 'sidebar-search-input',
       type: 'search',
-      placeholder: 'search conversations',
+      placeholder: SIDEBAR_COPY.search,
       value: this.search,
-      'aria-label': 'search conversations',
+      'aria-label': 'Search chats or projects',
       oninput: (ev: Event) => {
         const target = ev.target as HTMLInputElement;
         this.search = (target.value || '').trim();
@@ -213,8 +200,8 @@ export class AgentsSidebar {
     this.searchClearBtn = el('button', {
       class: 'sidebar-search-clear',
       type: 'button',
-      title: 'clear search',
-      'aria-label': 'clear search',
+      title: 'Clear search',
+      'aria-label': 'Clear search',
       onclick: () => {
         this.search = '';
         this.searchInput.value = '';
@@ -226,7 +213,7 @@ export class AgentsSidebar {
 
     this.sortSelect = el('select', {
       class: 'sidebar-sort',
-      'aria-label': 'sort conversations',
+      'aria-label': 'Sort conversations',
       onchange: (ev: Event) => {
         const target = ev.target as HTMLSelectElement;
         this.sortKey = target.value;
@@ -243,9 +230,9 @@ export class AgentsSidebar {
     const clearBtn = el('button', {
       class: 'sidebar-multi__clear',
       type: 'button',
-      title: 'clear selection (Esc)',
+      title: 'Clear selection (Esc)',
       onclick: (ev: MouseEvent) => { ev.stopPropagation(); this.clearMultiSelection(); },
-    }, 'clear') as HTMLButtonElement;
+    }, 'Clear') as HTMLButtonElement;
     this.multiSelectFooter = el('div', { class: 'sidebar-multi', hidden: '' },
       this.multiSelectLabel,
       clearBtn,
@@ -253,7 +240,7 @@ export class AgentsSidebar {
 
     this.root = el('aside', { class: 'sidebar' },
       el('div', { class: 'sidebar-head' },
-        el('span', { class: 'sidebar-title' }, 'agents'),
+        el('span', { class: 'sidebar-title' }, SIDEBAR_COPY.title),
         this.newBtn,
         this.newFolderBtn,
         this.closeDrawerBtn,
@@ -304,68 +291,154 @@ export class AgentsSidebar {
   // Visible, sorted, search-filtered agent IDs in their on-screen order.
   // Used as the ordering universe for shift-click range selection.
   private _visibleOrderedIds(): string[] {
-    const visible = this._sortAgents(this.agents).filter((a) => this._matchesSearch(a));
-    const folderById = new Map<string, Folder>();
-    for (const f of this.folders) folderById.set(f.id, f);
-    const folderOfAgent = new Map<string, string>();
-    for (const f of this.folders) for (const aid of f.agentIds) folderOfAgent.set(aid, f.id);
+    return this._chatsForActivePane().map((a) => a.id);
+  }
 
-    if (this.folders.length === 0) return visible.map((a) => a.id);
+  private _setActiveFolder(id: string): void {
+    this.activeFolderId = id || TOP_LEVEL_ID;
+    saveActiveFolderId(this.activeFolderId === TOP_LEVEL_ID ? TOP_LEVEL_ID : this.activeFolderId);
+  }
 
-    const topLevel: string[] = [];
-    const buckets = new Map<string, string[]>();
-    for (const a of visible) {
-      const fid = folderOfAgent.get(a.id);
-      if (fid && folderById.has(fid)) {
-        if (!buckets.has(fid)) buckets.set(fid, []);
-        buckets.get(fid)!.push(a.id);
-      } else {
-        topLevel.push(a.id);
-      }
+  private _folderIdForAgent(agentId: string): string {
+    const agent = this.agents.find((a) => a.id === agentId);
+    if (agent && agent.archived) return ARCHIVED_FOLDER_ID;
+    for (const f of this.folders) {
+      if (f.agentIds.includes(agentId)) return f.id;
     }
-    const ordered: string[] = [];
-    ordered.push(...topLevel);
-    for (const f of this.folders) ordered.push(...(buckets.get(f.id) || []));
-    return ordered;
+    return TOP_LEVEL_ID;
+  }
+
+  private _projectLabel(folderId: string): string {
+    if (folderId === TOP_LEVEL_ID) return SIDEBAR_COPY.topLevel;
+    const f = this.folders.find((x) => x.id === folderId);
+    return f ? f.name : SIDEBAR_COPY.topLevel;
+  }
+
+  private _chatsForActivePane(): Agent[] {
+    const sorted = this._sortAgents(this.agents);
+    if (this.folders.length === 0) {
+      return sorted.filter((a) => this._matchesSearch(a));
+    }
+    const inProject = sorted.filter((a) => this._folderIdForAgent(a.id) === this.activeFolderId);
+    if (!this.search) return inProject;
+    const needle = this.search.toLowerCase();
+    if (this._projectLabel(this.activeFolderId).toLowerCase().includes(needle)) return inProject;
+    return inProject.filter((a) => this._matchesSearch(a));
   }
 
   private _sortAgents(list: Agent[]): Agent[] {
-    const sorter = SORTS[this.sortKey] || SORTS[SORT_DEFAULT]!;
-    return list.slice().sort((a, b) => {
-      const s = (b.starred ? 1 : 0) - (a.starred ? 1 : 0);
-      if (s) return s;
-      return sorter.cmp(a, b);
-    });
+    return sortAgents(list, this.sortKey);
   }
 
   private _matchesSearch(a: Agent): boolean {
-    if (!this.search) return true;
-    const needle = this.search.toLowerCase();
-    return (a.name || '').toLowerCase().includes(needle)
-        || (a.id || '').toLowerCase().includes(needle)
-        || (a.model || '').toLowerCase().includes(needle);
+    return matchesSearch(a, this.search);
   }
 
-  async spawnNew(): Promise<void> {
+  openNewChat(presetFolderId?: string | null): void {
+    const fromActive = this.activeFolderId && this.activeFolderId !== TOP_LEVEL_ID
+      ? this.activeFolderId
+      : null;
+    openNewChatDialog({
+      folders: this.folders,
+      presetFolderId: presetFolderId ?? fromActive,
+      onSubmit: (values) => { void this.spawnNew(values); },
+    });
+  }
+
+  async spawnNew(opts?: { folderId?: string | null; name?: string }): Promise<void> {
     if (this._creating) return;
     this._creating = true;
     this.newBtn.disabled = true;
     this.error.hidden = true;
     const prevLabel = this.newBtn.textContent;
-    this.newBtn.textContent = 'spawning...';
+    this.newBtn.textContent = 'Creating…';
+    const folderId = opts && opts.folderId ? opts.folderId : null;
+    const folder = folderId ? this.folders.find((f) => f.id === folderId) : null;
+    const cwd = folder
+      ? inferCwdForFolder({
+          folderName: folder.name,
+          siblingCwds: siblingCwdsForFolder(folder, this.agents),
+        })
+      : '';
     try {
-      const created = await api.createAgent({}) as Agent;
+      const created = await api.createAgent({
+        ...(opts && opts.name ? { name: opts.name } : {}),
+        ...(cwd ? { cwd } : {}),
+        ...(folderId ? { folderId } : {}),
+      }) as Agent;
+      if (folderId) {
+        saveLastFolderId(folderId);
+        this._setActiveFolder(folderId);
+      } else {
+        this._setActiveFolder(TOP_LEVEL_ID);
+      }
       if (typeof this.onCreate === 'function') this.onCreate(created);
       await this.refresh();
+      await this.refreshFolders();
+      this.renderList();
       if (created && created.id) this.select(created.id);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'failed to spawn agent';
+      const msg = e instanceof Error ? e.message : 'Failed to spawn agent';
       this.error.textContent = msg;
       this.error.hidden = false;
     } finally {
       this._creating = false;
       this.newBtn.disabled = false;
       this.newBtn.textContent = prevLabel;
+    }
+  }
+
+  private _forkCandidates(folderItems: Agent[]): Agent[] {
+    const inFolder = folderItems.filter((a) => !a.archived);
+    if (inFolder.length > 0) return inFolder;
+    return this.agents.filter((a) => !a.archived);
+  }
+
+  forkIntoFolder(folderId: string | null, folderItems: Agent[]): void {
+    const candidates = this._forkCandidates(folderItems);
+    const autoId = pickForkSourceId({
+      folderAgentIds: folderItems.filter((a) => !a.archived).map((a) => a.id),
+      selectedId: this.selectedId,
+      fallbackIds: candidates.map((a) => a.id),
+    });
+    if (autoId) {
+      void this._forkAgent(autoId, folderId);
+      return;
+    }
+    const folderLabel = folderId
+      ? (this.folders.find((f) => f.id === folderId)?.name || 'folder')
+      : 'top level';
+    openForkChatDialog({
+      agents: candidates,
+      folderLabel,
+      selectedId: this.selectedId,
+      onSubmit: (sourceId) => { void this._forkAgent(sourceId, folderId); },
+    });
+  }
+
+  async _forkAgent(sourceId: string, folderId: string | null): Promise<void> {
+    if (this._creating) return;
+    this._creating = true;
+    this.error.hidden = true;
+    try {
+      const created = await api.fork(sourceId, { folderId }) as Agent;
+      if (folderId) {
+        saveLastFolderId(folderId);
+        this._setActiveFolder(folderId);
+      } else {
+        this._setActiveFolder(TOP_LEVEL_ID);
+      }
+      if (typeof this.onCreate === 'function') this.onCreate(created);
+      await this.refresh();
+      await this.refreshFolders();
+      this.renderList();
+      if (created && created.id) this.select(created.id);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to fork';
+      this.error.textContent = msg;
+      this.error.hidden = false;
+    } finally {
+      this._creating = false;
     }
   }
 
@@ -384,13 +457,37 @@ export class AgentsSidebar {
 
   mount(parent: HTMLElement): void {
     parent.appendChild(this.root);
-    void this.refresh();
-    void this.refreshFolders();
-    this._startSseStream();
+    void this._boot();
     this.startPolling();
     if (!this._spawnHandlerWired) {
-      document.addEventListener('grok-remote:spawn-agent', () => void this.spawnNew());
+      document.addEventListener('grok-remote:spawn-agent', () => this.openNewChat());
+      document.addEventListener('grok-remote:agent-working', (ev: Event) => {
+        const d = (ev as CustomEvent).detail || {};
+        this.markAgentWorking(String(d.id || ''), !!d.working);
+      });
+      document.addEventListener('grok-remote:agent-tokens', (ev: Event) => {
+        const d = (ev as CustomEvent).detail || {};
+        if (!d.id || typeof d.totalTokens !== 'number') return;
+        this.applyTokenCount(String(d.id), d.totalTokens);
+      });
+      document.addEventListener('grok-remote:open-drawer', () => {
+        if (!this._bootReady) return;
+        this.renderList();
+        requestAnimationFrame(() => this.renderList());
+      });
       this._spawnHandlerWired = true;
+    }
+  }
+
+  private async _boot(): Promise<void> {
+    try {
+      await Promise.all([this.refresh(), this.refreshFolders()]);
+    } finally {
+      this._bootReady = true;
+      this.renderList();
+      // Split.js sizes the pane after mount; paint again once it has a height.
+      requestAnimationFrame(() => this.renderList());
+      this._startSseStream();
     }
   }
 
@@ -399,14 +496,18 @@ export class AgentsSidebar {
     try {
       const es = new EventSource(api.agentsStreamUrl());
       this._agentsStream = es;
-      es.addEventListener('open', () => { this._sseAlive = true; });
+      es.addEventListener('open', () => {
+        this._sseAlive = true;
+        // Snapshot can be missed on iPad reconnect; pull Idle/Running from GET.
+        void this.refresh();
+      });
       es.addEventListener('agents_snapshot', (ev: MessageEvent) => {
         try {
           const d = JSON.parse(ev.data);
           if (d && Array.isArray(d.agents)) {
-            this.agents = d.agents;
-            this.renderList();
-            document.dispatchEvent(new CustomEvent('grok-remote:agents-refresh', { detail: d.agents }));
+            this._setAgents(d.agents);
+            if (this._bootReady) this.renderList();
+            document.dispatchEvent(new CustomEvent('grok-remote:agents-refresh', { detail: this.agents }));
           }
         } catch { /* ignore */ }
       });
@@ -414,27 +515,37 @@ export class AgentsSidebar {
       es.addEventListener('agent_added',   onMutation);
       es.addEventListener('agent_removed', onMutation);
       es.addEventListener('agent_updated', onMutation);
-      es.addEventListener('agent_status',  onMutation);
+      es.addEventListener('folders_changed', () => { void this.refreshFolders().then(() => this.renderList()); });
+      const patchAgent = (id: string, patch: Partial<Agent>): void => {
+        const idx = this._agentsRaw.findIndex((a) => a && a.id === id);
+        if (idx < 0) { void this.refresh(); return; }
+        this._agentsRaw[idx] = { ...this._agentsRaw[idx]!, ...patch };
+        this.agents = this._applyWorkingOverlay(this._agentsRaw);
+        this._scheduleRenderList();
+        document.dispatchEvent(new CustomEvent('grok-remote:agents-refresh', { detail: this.agents }));
+      };
+      es.addEventListener('agent_status', (ev: MessageEvent) => {
+        try {
+          const d = JSON.parse(ev.data) as { id?: string; status?: unknown; turnOpen?: unknown; inFlight?: unknown };
+          if (!d || !d.id || d.status == null) return;
+          const patch: Partial<Agent> = { status: String(d.status) };
+          if (typeof d.turnOpen === 'boolean') patch.turnOpen = d.turnOpen;
+          if (typeof d.inFlight === 'number') patch.inFlight = d.inFlight;
+          patchAgent(d.id, patch);
+        } catch { /* ignore */ }
+      });
       es.addEventListener('agent_tokens', (ev: MessageEvent) => {
         try {
           const d = JSON.parse(ev.data) as { id?: string; totalTokens?: unknown };
           if (!d || !d.id || typeof d.totalTokens !== 'number') return;
-          const idx = this.agents.findIndex((a) => a && a.id === d.id);
-          if (idx < 0) return;
-          this.agents[idx] = { ...this.agents[idx]!, totalTokens: d.totalTokens };
-          this.renderList();
-          document.dispatchEvent(new CustomEvent('grok-remote:agents-refresh', { detail: this.agents }));
+          patchAgent(d.id, { totalTokens: d.totalTokens });
         } catch { /* ignore */ }
       });
       es.addEventListener('agent_inflight', (ev: MessageEvent) => {
         try {
           const d = JSON.parse(ev.data) as { id?: string; inFlight?: unknown };
           if (!d || !d.id || typeof d.inFlight !== 'number') return;
-          const idx = this.agents.findIndex((a) => a && a.id === d.id);
-          if (idx < 0) return;
-          this.agents[idx] = { ...this.agents[idx]!, inFlight: d.inFlight };
-          this.renderList();
-          document.dispatchEvent(new CustomEvent('grok-remote:agents-refresh', { detail: this.agents }));
+          patchAgent(d.id, { inFlight: d.inFlight });
         } catch { /* ignore */ }
       });
       es.addEventListener('error', () => { this._sseAlive = false; });
@@ -454,7 +565,12 @@ export class AgentsSidebar {
     if (this.pollHandle) clearInterval(this.pollHandle);
     this.pollHandle = setInterval(() => {
       if (document.hidden) return;
-      if (this._sseAlive) return;
+      // SSE patches can miss the Idle event after a hold recreate, then
+      // skip polling forever while the row stays Running.
+      if (this._sseAlive) {
+        const stuck = this.agents.some((a) => a && sidebarDisplayStatus(a) === 'running');
+        if (!stuck) return;
+      }
       void this.refresh();
     }, 4000);
     if (!this._onVisibility) {
@@ -477,6 +593,43 @@ export class AgentsSidebar {
     this._stopSseStream();
   }
 
+  _applyWorkingOverlay(agents: Agent[]): Agent[] {
+    if (!this._workingUntil.size) return agents;
+    const now = Date.now();
+    for (const [id, until] of [...this._workingUntil.entries()]) {
+      if (until <= now) this._workingUntil.delete(id);
+    }
+    if (!this._workingUntil.size) return agents;
+    return agents.map((a) => {
+      if (!a) return a;
+      return applyWorkingOverlayRow(a, this._workingUntil.get(a.id), now);
+    });
+  }
+
+  private _setAgents(agents: Agent[]): void {
+    this._agentsRaw = Array.isArray(agents) ? agents : [];
+    this.agents = this._applyWorkingOverlay(this._agentsRaw);
+  }
+
+  applyTokenCount(id: string, totalTokens: number): void {
+    if (!id || typeof totalTokens !== 'number' || !Number.isFinite(totalTokens) || totalTokens < 0) return;
+    const idx = this._agentsRaw.findIndex((a) => a && a.id === id);
+    if (idx < 0) return;
+    if (this._agentsRaw[idx]!.totalTokens === totalTokens) return;
+    this._agentsRaw[idx] = { ...this._agentsRaw[idx]!, totalTokens };
+    this.agents = this._applyWorkingOverlay(this._agentsRaw);
+    this._scheduleRenderList();
+  }
+
+  markAgentWorking(id: string, working: boolean): void {
+    if (!id) return;
+    if (working) this._workingUntil.set(id, Date.now() + LOCAL_TURN_HOLD_MS);
+    else this._workingUntil.delete(id);
+    this.agents = this._applyWorkingOverlay(this._agentsRaw);
+    this.renderList();
+    document.dispatchEvent(new CustomEvent('grok-remote:agents-refresh', { detail: this.agents }));
+  }
+
   async refresh(): Promise<void> {
     try {
       const data = await api.listAgents();
@@ -485,13 +638,13 @@ export class AgentsSidebar {
         : (data && typeof data === 'object' && Array.isArray((data as { agents?: unknown }).agents)
             ? (data as { agents: Agent[] }).agents
             : []);
-      this.agents = agents;
-      this.renderList();
-      document.dispatchEvent(new CustomEvent('grok-remote:agents-refresh', { detail: agents }));
+      this._setAgents(agents);
+      if (this._bootReady) this.renderList();
+      document.dispatchEvent(new CustomEvent('grok-remote:agents-refresh', { detail: this.agents }));
     } catch (e) {
-      this.agents = [];
+      this._setAgents([]);
       const msg = e instanceof Error ? e.message : String(e);
-      this.renderList(msg);
+      if (this._bootReady) this.renderList(msg);
     }
   }
 
@@ -502,6 +655,16 @@ export class AgentsSidebar {
     } catch {
       this.folders = [];
     }
+    if (this._bootReady) this.renderList();
+  }
+
+  private _renderListRaf = 0;
+  private _scheduleRenderList(): void {
+    if (this._renderListRaf) return;
+    this._renderListRaf = requestAnimationFrame(() => {
+      this._renderListRaf = 0;
+      this.renderList();
+    }) as unknown as number;
   }
 
   renderList(errorMessage?: string): void {
@@ -510,6 +673,7 @@ export class AgentsSidebar {
     // leave a ghost stranded against a recycled source element.
     if (this._drag) this._cancelDrag();
     this.activeList.replaceChildren();
+    this.activeList.classList.remove('agents-list--split');
     if (this.searchClearBtn) this.searchClearBtn.hidden = !this.search;
     // Drop stale ids from multi-selection so the footer count stays accurate.
     if (this.multiSelection.size > 0) {
@@ -526,122 +690,247 @@ export class AgentsSidebar {
 
     if (errorMessage) {
       this.activeList.appendChild(el('div', { class: 'agents-empty agents-empty--err' },
-        'backend unreachable'));
+        'Backend unreachable'));
       return;
     }
 
-    const visible = this._sortAgents(this.agents).filter((a) => this._matchesSearch(a));
-
-    // Bucket every visible agent by folder id. The system "Archived" folder
-    // collects every archived agent automatically (the backend assigns them
-    // when the archived flag flips).
-    const folderById = new Map<string, Folder>();
-    for (const f of this.folders) folderById.set(f.id, f);
-    const folderOfAgent = new Map<string, string>();
-    for (const f of this.folders) for (const aid of f.agentIds) folderOfAgent.set(aid, f.id);
-
-    const topLevel: Agent[] = [];
-    const buckets = new Map<string, Agent[]>();
-    for (const a of visible) {
-      let fid = folderOfAgent.get(a.id);
-      // Belt-and-suspenders: an archived agent must always live in the Archived
-      // folder, even if the backend folder side-effect lagged or the folder file
-      // is out of sync. Without this, archived agents fall to top level.
-      if (a.archived && fid !== ARCHIVED_FOLDER_ID && folderById.has(ARCHIVED_FOLDER_ID)) {
-        fid = ARCHIVED_FOLDER_ID;
-      }
-      if (fid && folderById.has(fid)) {
-        if (!buckets.has(fid)) buckets.set(fid, []);
-        buckets.get(fid)!.push(a);
-      } else {
-        topLevel.push(a);
-      }
-    }
-
-    if (!this.agents.length) {
+    if (!this.agents.length && this.folders.length === 0) {
       this.activeList.appendChild(this.empty);
       return;
     }
-    if (!visible.length && this.folders.length === 0) {
-      this.activeList.appendChild(this.noMatch);
-      return;
+
+    const chatsByFolder = new Map<string, Agent[]>();
+    const topLevelAll: Agent[] = [];
+    for (const a of this.agents) {
+      const fid = this._folderIdForAgent(a.id);
+      if (fid === TOP_LEVEL_ID) topLevelAll.push(a);
+      else {
+        if (!chatsByFolder.has(fid)) chatsByFolder.set(fid, []);
+        chatsByFolder.get(fid)!.push(a);
+      }
     }
 
-    if (this.folders.length > 0) {
-      this.activeList.appendChild(this.renderGroup(TOP_LEVEL_ID, 'top level', topLevel, null));
-      for (const f of this.folders) {
-        this.activeList.appendChild(this.renderGroup(f.id, f.name, buckets.get(f.id) || [], f));
-      }
-    } else {
-      for (const a of topLevel) this.activeList.appendChild(this.renderItem(a, false));
+    const activityById = new Map<string, string>();
+    const liveById = new Map<string, number>();
+    for (const f of this.folders) {
+      const chats = chatsByFolder.get(f.id) || [];
+      activityById.set(f.id, folderActivity(chats));
+      const live = projectLiveWork(chats);
+      liveById.set(f.id, live.running + live.starting);
     }
+    const ordered = sortProjects(this.folders, activityById, liveById);
+    const hasTopLevel = topLevelAll.length > 0;
+    if (hasTopLevel) activityById.set(TOP_LEVEL_ID, folderActivity(topLevelAll));
+
+    const selectedFolderId = this.selectedId ? this._folderIdForAgent(this.selectedId) : undefined;
+    this.activeFolderId = resolveActiveFolderId({
+      saved: this.activeFolderId,
+      folderIds: ordered.map((f) => f.id),
+      hasTopLevel,
+      selectedFolderId: selectedFolderId === undefined
+        ? undefined
+        : (selectedFolderId === TOP_LEVEL_ID ? null : selectedFolderId),
+    });
+    saveActiveFolderId(this.activeFolderId);
+
+    const projectEntries: Array<{ id: string; name: string; count: number; folder: Folder | null }> = [];
+    if (hasTopLevel) {
+      projectEntries.push({
+        id: TOP_LEVEL_ID,
+        name: SIDEBAR_COPY.topLevel,
+        count: topLevelAll.length,
+        folder: null,
+      });
+    }
+    for (const f of ordered) {
+      projectEntries.push({
+        id: f.id,
+        name: f.name,
+        count: (chatsByFolder.get(f.id) || []).length,
+        folder: f,
+      });
+    }
+
+    const visibleProjects = projectEntries.filter((p) => {
+      const inFolder = p.id === TOP_LEVEL_ID ? topLevelAll : (chatsByFolder.get(p.id) || []);
+      const chatMatchCount = this.search
+        ? inFolder.filter((a) => this._matchesSearch(a)).length
+        : inFolder.length;
+      return projectMatchesSearch({ name: p.name, search: this.search, chatMatchCount });
+    });
+    if (visibleProjects.every((p) => p.id !== this.activeFolderId)) {
+      const active = projectEntries.find((p) => p.id === this.activeFolderId);
+      if (active) visibleProjects.unshift(active);
+    }
+
+    this.activeList.classList.add('agents-list--split');
+    const navList = el('div', { class: 'project-nav__list' }) as HTMLElement;
+    for (const p of visibleProjects) {
+      const chats = p.id === TOP_LEVEL_ID ? topLevelAll : (chatsByFolder.get(p.id) || []);
+      navList.appendChild(this.renderProjectRow(p.id, p.name, p.count, p.folder, chats));
+    }
+    if (!visibleProjects.length) {
+      navList.appendChild(el('div', { class: 'folder-empty' }, SIDEBAR_COPY.noMatch));
+    }
+
+    this.activeList.appendChild(el('div', { class: 'project-nav' },
+      el('div', { class: 'project-nav__label' }, SIDEBAR_COPY.projects),
+      navList,
+    ));
+    this.activeList.appendChild(this.renderChatPane());
   }
 
-  private renderGroup(groupId: string, label: string, items: Agent[], folder: Folder | null): HTMLElement {
-    const isTopLevel = groupId === TOP_LEVEL_ID;
+  private renderProjectRow(
+    id: string,
+    name: string,
+    count: number,
+    folder: Folder | null,
+    chats: Agent[],
+  ): HTMLElement {
+    const isActive = id === this.activeFolderId;
     const isSystem = !!(folder && folder.system);
-    const isArchived = folder?.id === ARCHIVED_FOLDER_ID;
-    // System (archived) folders auto-collapse by default until the user toggles them.
-    const isCollapsed = isArchived
-      ? !this.collapsed.has(`open:${groupId}`)
-      : this.collapsed.has(groupId);
-    const folderId = isTopLevel ? null : groupId;
-
-    const caret = el('span', { class: 'folder-caret' }, isCollapsed ? '▶' : '▼');
-    const labelEl = el('span', { class: 'folder-name' }, label);
-    const count = el('span', { class: 'folder-count' }, String(items.length));
-
-    const deleteBtn = (!isTopLevel && !isSystem) ? el('button', {
-      class: 'folder-delete',
+    const live = projectLiveWork(chats);
+    const liveN = live.running + live.starting;
+    const liveKind = live.running > 0 ? 'running' : (live.starting > 0 ? 'starting' : '');
+    const nameEl = el('span', { class: 'project-row__name' }, name);
+    const liveTitle = live.running > 0
+      ? `${name} — ${live.running} running`
+      : (live.starting > 0 ? `${name} — starting` : name);
+    const children: Array<HTMLElement | string | null> = [];
+    if (liveKind) {
+      children.push(el('span', {
+        class: `project-row__dot agent-dot agent-dot--${liveKind}`,
+        title: liveTitle,
+      }));
+    }
+    children.push(nameEl);
+    if (liveN > 1) {
+      children.push(el('span', {
+        class: `project-row__live project-row__live--${liveKind}`,
+        title: liveTitle,
+      }, String(liveN)));
+    }
+    children.push(el('span', { class: 'project-row__count' }, String(count)));
+    const row = el('button', {
+      class: [
+        'project-row',
+        isActive ? 'project-row--active' : '',
+        isSystem ? 'project-row--system' : '',
+        liveKind ? `project-row--${liveKind}` : '',
+      ].filter(Boolean).join(' '),
       type: 'button',
-      title: 'delete folder (agents move back to top level)',
-      onclick: async (ev: MouseEvent) => {
-        ev.stopPropagation();
-        if (!confirm(`Delete folder "${label}"?\nIts agents move back to the top level.`)) return;
-        try {
-          await api.folders.remove(folderId!);
-          await this.refreshFolders();
-          this.renderList();
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          alert(`delete folder failed: ${msg}`);
-        }
-      },
-    }, '×') as HTMLButtonElement : null;
-
-    const header = el('div', {
-      class: `folder-header${isTopLevel ? ' folder-header--top' : ''}${isSystem ? ' folder-header--system' : ''}`,
-      'data-folder-id': groupId,
+      'data-folder-id': id,
+      title: liveTitle,
       onclick: () => {
-        if (isArchived) {
-          // Inverse key so the default state is collapsed.
-          const k = `open:${groupId}`;
-          if (this.collapsed.has(k)) this.collapsed.delete(k); else this.collapsed.add(k);
-        } else {
-          if (isCollapsed) this.collapsed.delete(groupId); else this.collapsed.add(groupId);
-        }
-        saveCollapsed(this.collapsed);
+        this._setActiveFolder(id);
         this.renderList();
       },
       ondblclick: (ev: MouseEvent) => {
-        if (isTopLevel || isSystem || !folder) return;
+        if (!folder || isSystem) return;
         ev.preventDefault();
         ev.stopPropagation();
-        this.beginInlineRenameFolder(folder, labelEl as HTMLElement);
+        this.beginInlineRenameFolder(folder, nameEl as HTMLElement);
       },
-    }, caret, labelEl, count, deleteBtn) as HTMLElement;
+    }, ...children) as HTMLElement;
+    return row;
+  }
 
-    const body = el('div', { class: 'folder-body' }) as HTMLElement;
-    if (!isCollapsed) {
-      if (items.length === 0) {
-        body.appendChild(el('div', { class: 'folder-empty' },
-          isTopLevel ? 'drop agents here to remove from folders' : 'drop agents here'));
-      } else {
-        for (const a of items) body.appendChild(this.renderItem(a, false));
-      }
+  private renderChatPane(): HTMLElement {
+    const isTopLevel = this.activeFolderId === TOP_LEVEL_ID;
+    const folder = isTopLevel ? null : (this.folders.find((f) => f.id === this.activeFolderId) || null);
+    const isArchived = this.activeFolderId === ARCHIVED_FOLDER_ID;
+    const isSystem = !!(folder && folder.system);
+    const label = this._projectLabel(this.activeFolderId);
+    const items = this._chatsForActivePane();
+    const folderId = isTopLevel ? null : this.activeFolderId;
+
+    const actions = el('div', { class: 'folder-actions' }) as HTMLElement;
+    if (!isArchived) {
+      actions.appendChild(el('button', {
+        class: 'folder-action folder-action--new',
+        type: 'button',
+        title: isTopLevel ? 'New chat at top level' : `New chat in ${label}`,
+        onclick: () => { void this.spawnNew({ folderId }); },
+      }, SIDEBAR_COPY.folderNew) as HTMLButtonElement);
+      actions.appendChild(el('button', {
+        class: 'folder-action folder-action--fork',
+        type: 'button',
+        title: isTopLevel ? 'Fork a chat into top level' : `Fork a chat into ${label}`,
+        onclick: () => {
+          const allIn = this.agents.filter((a) => this._folderIdForAgent(a.id) === this.activeFolderId);
+          this.forkIntoFolder(folderId, allIn);
+        },
+      }, SIDEBAR_COPY.folderFork) as HTMLButtonElement);
+    }
+    if (!isTopLevel && !isSystem && folder) {
+      actions.appendChild(el('button', {
+        class: 'folder-delete',
+        type: 'button',
+        title: 'Delete folder (agents move back to top level)',
+        onclick: async () => {
+          if (!confirm(`Delete folder "${label}"?\nIts agents move back to the top level.`)) return;
+          try {
+            await api.folders.remove(folder.id);
+            this._setActiveFolder(TOP_LEVEL_ID);
+            await this.refreshFolders();
+            this.renderList();
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            alert(`Delete folder failed: ${msg}`);
+          }
+        },
+      }, '×') as HTMLButtonElement);
     }
 
-    return el('div', { class: 'folder-group', 'data-folder-id': groupId }, header, body) as HTMLElement;
+    const cwds = Array.from(new Set(items.map((a) => String(a.cwd || '').trim()).filter(Boolean)));
+    const pathText = cwds.length === 1 ? cwds[0] : '';
+    const countText = `${items.length} chat${items.length === 1 ? '' : 's'}`;
+    const head = el('div', { class: 'project-chats__head' },
+      el('div', { class: 'project-chats__id' },
+        el('span', { class: 'project-chats__title' }, label),
+        el('div', { class: 'project-chats__sub' },
+          pathText ? el('span', { class: 'project-chats__path', title: pathText }, pathText) : null,
+          el('span', { class: 'project-chats__count' }, countText),
+        ),
+      ),
+      actions,
+    ) as HTMLElement;
+
+    const list = el('div', { class: 'project-chats__list' }) as HTMLElement;
+    if (!items.length) {
+      list.appendChild(el('div', { class: 'folder-empty' },
+        this.search ? SIDEBAR_COPY.noMatch
+          : (isTopLevel ? SIDEBAR_COPY.emptyTop : SIDEBAR_COPY.emptyFolder)));
+      if (!isArchived && !this.search) {
+        list.appendChild(this.renderFolderHandle(folderId, label, items));
+      }
+    } else {
+      for (const a of items) list.appendChild(this.renderItem(a, isArchived));
+    }
+
+    return el('div', { class: 'project-chats' }, head, list) as HTMLElement;
+  }
+
+  private renderFolderHandle(folderId: string | null, label: string, items: Agent[]): HTMLElement {
+    const newBtn = el('button', {
+      class: 'folder-handle__btn folder-handle__btn--new',
+      type: 'button',
+      title: folderId ? `New chat in ${label}` : 'New chat at top level',
+      onclick: (ev: MouseEvent) => {
+        ev.stopPropagation();
+        void this.spawnNew({ folderId });
+      },
+    }, SIDEBAR_COPY.handleNew) as HTMLButtonElement;
+    const forkBtn = el('button', {
+      class: 'folder-handle__btn folder-handle__btn--fork',
+      type: 'button',
+      title: folderId ? `Fork a chat into ${label}` : 'Fork a chat to top level',
+      onclick: (ev: MouseEvent) => {
+        ev.stopPropagation();
+        this.forkIntoFolder(folderId, items);
+      },
+    }, SIDEBAR_COPY.handleFork) as HTMLButtonElement;
+    return el('div', { class: 'folder-handle' }, newBtn, forkBtn) as HTMLElement;
   }
 
   private beginInlineRenameFolder(folder: Folder, labelEl: HTMLElement): void {
@@ -664,7 +953,7 @@ export class AgentsSidebar {
           await this.refreshFolders();
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
-          alert(`rename folder failed: ${msg}`);
+          alert(`Rename folder failed: ${msg}`);
         }
         this.renderList();
       },
@@ -708,13 +997,13 @@ export class AgentsSidebar {
 
   renderItem(a: Agent, isArchived: boolean): HTMLElement {
     const isSelected = a.id === this.selectedId;
-    const status = a.status || 'idle';
+    const status = sidebarDisplayStatus(a);
     const isDisconnected = status === 'disconnected' || status === 'exited';
     const dot = el('span', { class: `agent-dot agent-dot--${status}` });
 
     const starBtn = el('button', {
       class: `agent-star agent-row-action${a.starred ? ' is-on' : ''}`,
-      title: a.starred ? 'unstar' : 'star',
+      title: a.starred ? 'Unstar' : 'Star',
       type: 'button',
       onclick: async (ev: MouseEvent) => {
         ev.stopPropagation();
@@ -724,7 +1013,7 @@ export class AgentsSidebar {
           await this.refresh();
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
-          alert(`star failed: ${msg}`);
+          alert(`Star failed: ${msg}`);
         } finally {
           starBtn.disabled = false;
         }
@@ -741,33 +1030,27 @@ export class AgentsSidebar {
       },
     }, a.name || a.id.slice(0, 8)) as HTMLElement;
 
+    const moreBtn = el('button', {
+      class: 'agent-more agent-row-action',
+      type: 'button',
+      title: SIDEBAR_COPY.more,
+      'aria-label': SIDEBAR_COPY.more,
+      onclick: (ev: MouseEvent) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const r = moreBtn.getBoundingClientRect();
+        this._showContextMenu(a, r.right - 4, r.bottom + 4);
+      },
+    }, '⋯') as HTMLButtonElement;
+
     let closeArea: HTMLElement | null;
     if (!isArchived) {
-      const archiveBtn = el('button', {
-        class: 'agent-archive agent-row-action',
-        type: 'button',
-        title: 'archive (move to archived; you can restore or delete later)',
-        onclick: async (ev: MouseEvent) => {
-          ev.stopPropagation();
-          archiveBtn.disabled = true;
-          try {
-            await api.updateAgent(a.id, { archived: true });
-            if (this.selectedId === a.id) this.selectedId = null;
-            await this.refresh();
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : String(e);
-            alert(`archive failed: ${msg}`);
-          } finally {
-            archiveBtn.disabled = false;
-          }
-        },
-      }, '×') as HTMLButtonElement;
-      closeArea = archiveBtn;
+      closeArea = moreBtn;
     } else {
       const restoreBtn = el('button', {
         class: 'agent-restore agent-row-action',
         type: 'button',
-        title: 'restore from archive',
+        title: 'Restore from archive',
         onclick: async (ev: MouseEvent) => {
           ev.stopPropagation();
           restoreBtn.disabled = true;
@@ -776,16 +1059,16 @@ export class AgentsSidebar {
             await this.refresh();
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            alert(`restore failed: ${msg}`);
+            alert(`Restore failed: ${msg}`);
           } finally {
             restoreBtn.disabled = false;
           }
         },
-      }, 'restore') as HTMLButtonElement;
+      }, 'Restore') as HTMLButtonElement;
       const deleteBtn = el('button', {
         class: 'agent-delete-forever agent-row-action',
         type: 'button',
-        title: 'delete forever (removes history + uploads)',
+        title: 'Delete forever (removes history and uploads)',
         onclick: async (ev: MouseEvent) => {
           ev.stopPropagation();
           if (!confirm(`Delete "${a.name || a.id}" forever?\nThis removes its history and uploaded files. Cannot be undone.`)) return;
@@ -796,26 +1079,33 @@ export class AgentsSidebar {
             await this.refresh();
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            alert(`delete failed: ${msg}`);
+            alert(`Delete failed: ${msg}`);
           }
         },
-      }, 'delete') as HTMLButtonElement;
-      closeArea = el('div', { class: 'agent-archived-actions' }, restoreBtn, deleteBtn) as HTMLElement;
+      }, 'Delete') as HTMLButtonElement;
+      closeArea = el('div', { class: 'agent-archived-actions' }, restoreBtn, deleteBtn, moreBtn) as HTMLElement;
     }
 
-    const inflightChip = (typeof a.inFlight === 'number' && a.inFlight > 0)
-      ? el('span', { class: 'agent-inflight', title: `${a.inFlight} tool call${a.inFlight === 1 ? '' : 's'} in flight` },
-          el('span', { class: 'agent-inflight-dot' }),
-          `${a.inFlight} tool${a.inFlight === 1 ? '' : 's'}`)
-      : null;
-    const tokenChip = (typeof a.totalTokens === 'number' && a.totalTokens > 0)
-      ? el('span', { class: 'agent-tokens', title: `${a.totalTokens.toLocaleString()} tokens in context` }, fmtTokens(a.totalTokens))
-      : null;
-    const statusChip = el('span', { class: `agent-status agent-status--${status}` }, STATUS_LABEL[status] || status);
-
-    const metaChildren: (HTMLElement | null)[] = [statusChip];
-    if (inflightChip) metaChildren.push(inflightChip);
-    if (tokenChip) metaChildren.push(tokenChip);
+    const statusText = rowStatusLabel(status);
+    const metaChildren: (HTMLElement | null)[] = [];
+    if (statusText) {
+      metaChildren.push(el('span', { class: `agent-status agent-status--${rowStatusKey(status)}` }, statusText));
+    }
+    if (typeof a.inFlight === 'number' && a.inFlight > 0) {
+      metaChildren.push(el('span', {
+        class: 'agent-inflight',
+        title: `${a.inFlight} tool call${a.inFlight === 1 ? '' : 's'} in flight`,
+      },
+        el('span', { class: 'agent-inflight-dot' }),
+        `${a.inFlight} tool${a.inFlight === 1 ? '' : 's'}`,
+      ));
+    }
+    if (typeof a.totalTokens === 'number' && a.totalTokens > 0) {
+      metaChildren.push(el('span', {
+        class: 'agent-tokens',
+        title: `${a.totalTokens.toLocaleString()} tokens in context`,
+      }, fmtTokens(a.totalTokens)));
+    }
 
     const isMulti = this.multiSelection.has(a.id);
     const item = el('div', {
@@ -840,7 +1130,7 @@ export class AgentsSidebar {
         nameEl,
         closeArea,
       ),
-      el('div', { class: 'agent-item-meta' }, ...metaChildren),
+      metaChildren.length ? el('div', { class: 'agent-item-meta' }, ...metaChildren) : null,
     ) as HTMLElement;
 
     // Treat genuinely-archived agents as non-draggable regardless of the
@@ -1019,7 +1309,7 @@ export class AgentsSidebar {
   }
 
   private _highlightDropTarget(clientX: number, clientY: number): void {
-    const all = this.activeList.querySelectorAll<HTMLElement>('.folder-header');
+    const all = this.activeList.querySelectorAll<HTMLElement>('.project-row');
     let hit: HTMLElement | null = null;
     for (const h of all) {
       const r = h.getBoundingClientRect();
@@ -1028,11 +1318,11 @@ export class AgentsSidebar {
         break;
       }
     }
-    for (const h of all) h.classList.toggle('folder-header--drop', h === hit);
+    for (const h of all) h.classList.toggle('project-row--drop', h === hit);
   }
 
   private _findDropTarget(clientX: number, clientY: number): string | null {
-    const all = this.activeList.querySelectorAll<HTMLElement>('.folder-header');
+    const all = this.activeList.querySelectorAll<HTMLElement>('.project-row');
     for (const h of all) {
       const r = h.getBoundingClientRect();
       if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
@@ -1052,7 +1342,7 @@ export class AgentsSidebar {
     if (drag.ghost && drag.ghost.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
     drag.sourceEl.classList.remove('agent-item--dragging');
     document.body.classList.remove('agents-dragging');
-    this.activeList.querySelectorAll('.folder-header--drop').forEach((n) => n.classList.remove('folder-header--drop'));
+    this.activeList.querySelectorAll('.project-row--drop').forEach((n) => n.classList.remove('project-row--drop'));
     this._drag = null;
   }
 
@@ -1067,6 +1357,7 @@ export class AgentsSidebar {
     try {
       await api.agents.setFolder(agentId, folderId);
       console.debug(`[drag] assign-ok id=${agentId} folder=${folderId}`);
+      this._setActiveFolder(groupId);
       await this.refreshFolders();
       this.renderList();
     } catch (e) {
@@ -1078,7 +1369,9 @@ export class AgentsSidebar {
 
   select(id: string): void {
     this.selectedId = id;
+    this._setActiveFolder(this._folderIdForAgent(id));
     this.renderList();
+    document.dispatchEvent(new CustomEvent('grok-remote:close-drawer'));
     if (typeof this.onSelect === 'function') this.onSelect(id);
   }
 
@@ -1176,7 +1469,7 @@ export class AgentsSidebar {
         await this.refresh();
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        alert(`star failed: ${msg}`);
+        alert(`Star failed: ${msg}`);
       }
     }));
 
@@ -1187,6 +1480,15 @@ export class AgentsSidebar {
         );
         if (node) this.beginInlineRenameAgent(a, node);
       }));
+      if (!a.archived) {
+        items.push(mkItem('Fork', () => {
+          let dest: string | null = null;
+          for (const f of this.folders) {
+            if (!f.system && f.agentIds.includes(a.id)) { dest = f.id; break; }
+          }
+          void this._forkAgent(a.id, dest);
+        }));
+      }
     }
 
     items.push(mkSep());
@@ -1246,12 +1548,12 @@ export class AgentsSidebar {
         await this.refresh();
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        alert(`archive failed: ${msg}`);
+        alert(`Archive failed: ${msg}`);
       }
     }));
 
     if (!bulk) {
-      items.push(mkItem('Copy id', async () => {
+      items.push(mkItem('Copy ID', async () => {
         try {
           if (navigator.clipboard && navigator.clipboard.writeText) {
             await navigator.clipboard.writeText(a.id);
@@ -1264,7 +1566,7 @@ export class AgentsSidebar {
             document.body.removeChild(ta);
           }
         } catch {
-          alert('copy failed');
+          alert('Copy failed');
         }
       }));
     }
@@ -1289,7 +1591,7 @@ export class AgentsSidebar {
         await this.refresh();
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        alert(`delete failed: ${msg}`);
+        alert(`Delete failed: ${msg}`);
       }
     }, { danger: true }));
 

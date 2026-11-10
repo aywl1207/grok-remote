@@ -1,0 +1,317 @@
+/* Compact chat chrome: cwd chip, mode pill, more menu, unified live bar. */
+
+.cwd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.cwd-chip[hidden] { display: none; }
+.cwd-chip:hover { color: var(--text); border-color: var(--border-2); }
+.cwd-chip.is-copied { border-color: var(--teal); color: var(--teal); }
+.cwd-chip__kicker {
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  color: var(--dim);
+  flex: 0 0 auto;
+}
+.cwd-chip__path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.tab-mode {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid rgba(167, 139, 250, 0.4);
+  border-radius: 999px;
+  background: rgba(167, 139, 250, 0.10);
+  color: #c4b5fd;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.tab-mode[hidden] { display: none; }
+.tab-mode--ask { color: var(--amber, #fbbf24); border-color: rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.08); }
+.tab-mode--auto { color: var(--teal); border-color: rgba(94, 234, 212, 0.4); background: rgba(94, 234, 212, 0.10); }
+.tab-mode--plan { color: #5eead4; border-color: rgba(94, 234, 212, 0.5); }
+
+.tab--wide { display: none; }
+@media (min-width: 900px) {
+  .tab--wide { display: inline-block; }
+}
+.tab--more-only { display: none; }
+
+.pop-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  min-width: 168px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pop-menu__item {
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.pop-menu__item:hover { background: var(--panel-2); }
+.pop-menu__item.is-active { color: #c4b5fd; }
+
+.tab-actions-group { position: relative; }
+
+.live-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 16px;
+  border-bottom: 1px dashed rgba(167, 139, 250, 0.35);
+  background: linear-gradient(180deg, rgba(167, 139, 250, 0.10), transparent);
+}
+.live-bar[hidden] { display: none; }
+.live-bar__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.live-bar__title {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: #c4b5fd;
+}
+.live-bar__count { font-size: 11px; color: var(--muted); }
+.live-bar__dots {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.live-bar__dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a78bfa;
+  opacity: 0.25;
+}
+.live-bar--live .live-bar__dots span:nth-child(1) { animation: subagent-dot 1s ease-in-out infinite; }
+.live-bar--live .live-bar__dots span:nth-child(2) { animation: subagent-dot 1s ease-in-out 0.18s infinite; }
+.live-bar--live .live-bar__dots span:nth-child(3) { animation: subagent-dot 1s ease-in-out 0.36s infinite; }
+.live-bar__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.live-bar__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 10px;
+  background: var(--panel-2);
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  border-radius: 999px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.live-bar__chip:hover { background: var(--panel); }
+.live-bar__chip--tool { border-color: rgba(252, 168, 84, 0.4); }
+.live-bar__chip--shell { border-color: rgba(94, 234, 212, 0.35); }
+.live-bar__chip--skill { border-color: var(--border); color: var(--muted); }
+.live-bar__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a78bfa;
+  flex: 0 0 auto;
+  animation: agent-inflight-pulse 1.2s ease-in-out infinite;
+}
+.live-bar__chip--tool .live-bar__dot { background: var(--amber, #fbbf24); }
+.live-bar__type {
+  font-size: 10px;
+  font-weight: 650;
+  color: #c4b5fd;
+  flex: 0 0 auto;
+}
+.live-bar__chip--tool .live-bar__type { color: var(--amber, #fbbf24); }
+.live-bar__label {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  min-width: 0;
+}
+.live-bar__dur {
+  font-size: 10px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 720px) {
+  .cwd-chip { max-width: 42vw; }
+  .live-bar__label { max-width: 140px; }
+  .chat-split--tools-collapsed > .chat-tools-col { display: none !important; }
+  .chat-split--tools-collapsed > .chat-stream,
+  .chat-split > .chat-stream {
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-bar--live .live-bar__dots span,
+  .live-bar__dot { animation: none; opacity: 1; }
+}
+
+
+.agent-more {
+  background: transparent;
+  border: none;
+  color: var(--dim);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  flex: 0 0 auto;
+}
+.agent-more:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.agent-item-meta:empty { display: none; }
+
+
+.todo-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 8px 16px;
+  border: 0;
+  border-bottom: 1px dashed rgba(94, 234, 212, 0.35);
+  background: linear-gradient(180deg, rgba(94, 234, 212, 0.10), transparent);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.todo-dock[hidden] { display: none; }
+.todo-dock:hover { background: linear-gradient(180deg, rgba(94, 234, 212, 0.16), transparent); }
+.todo-dock__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.todo-dock__title {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: var(--teal);
+}
+.todo-dock__summary {
+  font-size: 11px;
+  color: var(--muted);
+}
+.todo-dock__current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.todo-dock__mark {
+  flex: 0 0 auto;
+  color: var(--teal);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.todo-dock__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+#logout-btn { margin-left: 2px; }
+
+.pane--conversation { position: relative; }
+.chat-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--bg, #0c1117);
+  pointer-events: all;
+}
+.chat-loading[hidden] { display: none; }
+.chat-loading__spin {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--border, #233);
+  border-top-color: var(--teal, #5eead4);
+  border-radius: 50%;
+  animation: chat-loading-spin 0.7s linear infinite;
+}
+.chat-loading__text {
+  font-size: 13px;
+  color: var(--muted, #8a93a0);
+}
+@keyframes chat-loading-spin { to { transform: rotate(360deg); } }
+
+.todo-card--collapsed .todo-card__list { display: none; }
+.todo-card__head { cursor: pointer; }
+
+/* PLAN rows in Tool calls: native ol/button + OS light color-scheme painted
+   a white canvas while theme text stayed light grey. */
+.chat-tools-stream .todo-item,
+.todo-card .todo-item {
+  background: var(--panel-2, #11181f);
+  color: var(--text, #e8f0f8);
+  -webkit-text-fill-color: var(--text, #e8f0f8);
+  border: 1px solid var(--border, #1c2530);
+}
+.chat-tools-stream .todo-item__content,
+.todo-card .todo-item__content {
+  color: var(--text, #e8f0f8);
+  -webkit-text-fill-color: var(--text, #e8f0f8);
+}
+[data-theme="light"] .chat-tools-stream .todo-item,
+[data-theme="light"] .todo-card .todo-item {
+  background: #e5e7eb;
+  color: #111827;
+  -webkit-text-fill-color: #111827;
+  border-color: #c2cad3;
+}
+[data-theme="light"] .chat-tools-stream .todo-item__content,
+[data-theme="light"] .todo-card .todo-item__content {
+  color: #111827;
+  -webkit-text-fill-color: #111827;
+}

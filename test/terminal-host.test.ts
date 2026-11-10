@@ -86,11 +86,14 @@ test('create rejects when command is missing or empty', async () => {
   await assert.rejects(host.create({ command: '' }), /command required/);
 });
 
-test('output/waitForExit/kill all reject with -32004 for unknown terminalId', async () => {
+test('missing terminalId after reconnect is treated as already exited', async () => {
   const host = createTerminalHost({ getCwd: () => makeScope() });
-  await assert.rejects(host.output({ terminalId: 'nope' }),       /unknown terminalId/);
-  await assert.rejects(host.waitForExit({ terminalId: 'nope' }),  /unknown terminalId/);
-  await assert.rejects(host.kill({ terminalId: 'nope' }),         /unknown terminalId/);
+  const out = await host.output({ terminalId: 'nope' });
+  assert.equal(out.exitStatus && out.exitStatus.signal, 'SIGTERM');
+  assert.match(out.output, /ended after reconnect/);
+  const waited = await host.waitForExit({ terminalId: 'nope' });
+  assert.equal(waited.exitStatus && waited.exitStatus.exitCode, 1);
+  await host.kill({ terminalId: 'nope' });
 });
 
 test('release tears down a terminal and forgets it', async () => {
@@ -98,7 +101,8 @@ test('release tears down a terminal and forgets it', async () => {
   const { terminalId } = await host.create({ command: 'echo bye' });
   await host.waitForExit({ terminalId });
   await host.release({ terminalId });
-  await assert.rejects(host.output({ terminalId }), /unknown terminalId/);
+  const gone = await host.output({ terminalId });
+  assert.equal(gone.exitStatus && gone.exitStatus.signal, 'SIGTERM');
 });
 
 test('kill terminates a long-running process', async () => {

@@ -58,22 +58,22 @@ export function unmount(): void {
 async function reload(section: HTMLElement): Promise<void> {
   const { inspect, error } = await loadInspect();
   if (aborted) return;
-  if (error) { setStatusLine(section, 'failed to load: ' + error); return; }
+  if (error) { setStatusLine(section, 'Failed to load: ' + error); return; }
 
   const data = (inspect && typeof inspect === 'object') ? inspect as InspectShape : {};
   const plugins = Array.isArray(data.plugins) ? data.plugins : [];
   const cs = data.configSources || {};
   const banner: ConfigFile[] = [
-    ...(cs.userPath ? [{ label: 'user config', path: cs.userPath }] : []),
-    ...(Array.isArray(cs.projectPaths) ? cs.projectPaths.map((p) => ({ label: 'project config', path: p })) : []),
+    ...(cs.userPath ? [{ label: 'User config', path: cs.userPath }] : []),
+    ...(Array.isArray(cs.projectPaths) ? cs.projectPaths.map((p) => ({ label: 'Project config', path: p })) : []),
   ];
   addConfigFilesBanner(section, banner);
   clearBody(section);
 
   if (!plugins.length) {
     section.appendChild(emptyState({
-      message: 'no plugins installed.',
-      hint: 'install one via the CLI: grok plugins add <path-or-url>',
+      message: 'No plugins installed.',
+      hint: 'Install one via the CLI: grok plugins add <path-or-url>',
     }));
     return;
   }
@@ -89,12 +89,12 @@ async function reload(section: HTMLElement): Promise<void> {
   const disabled = sorted.filter((p) => p.enabled === false);
 
   if (enabled.length) {
-    const { wrap, list } = buildGroup({ label: 'enabled', count: enabled.length });
+    const { wrap, list } = buildGroup({ label: 'Enabled', count: enabled.length });
     for (const p of enabled) list.appendChild(makePluginCard(p));
     section.appendChild(wrap);
   }
   if (disabled.length) {
-    const { wrap, list } = buildGroup({ label: 'disabled', count: disabled.length, openByDefault: false });
+    const { wrap, list } = buildGroup({ label: 'Disabled', count: disabled.length, openByDefault: false });
     for (const p of disabled) list.appendChild(makePluginCard(p));
     section.appendChild(wrap);
   }
@@ -103,7 +103,7 @@ async function reload(section: HTMLElement): Promise<void> {
     'Install plugins via the CLI: <code>grok plugins add &lt;path&gt;</code>. ' +
     'Disabling a plugin writes <code>[plugins.&lt;name&gt;] enabled = false</code> to ' +
     'config.toml; in-place edits from the dashboard are not yet wired up, so use the ' +
-    '"copy disable line" button and paste manually.',
+    '"Copy Disable" button and paste manually.',
   ));
 }
 
@@ -119,27 +119,27 @@ function makePluginCard(p: PluginRecord): HTMLElement {
 
   const enabled = p.enabled !== false;
   const actions = [{
-    label: enabled ? 'copy disable' : 'copy enable',
+    label: enabled ? 'Copy Disable' : 'Copy Enable',
     title: enabled
-      ? 'copy a [plugins.<name>] enabled = false snippet for config.toml'
-      : 'copy a [plugins.<name>] enabled = true snippet for config.toml',
+      ? 'Copy a [plugins.<name>] enabled = false snippet for config.toml'
+      : 'Copy a [plugins.<name>] enabled = true snippet for config.toml',
     onClick: async (ev: MouseEvent): Promise<void> => {
       const snippet = `[plugins.${tomlKey(p.name)}]\nenabled = ${enabled ? 'false' : 'true'}\n`;
       const ok = await copyToClipboard(snippet);
       const btn = ev.currentTarget as HTMLButtonElement;
       const prior = btn.textContent;
-      btn.textContent = ok ? 'copied' : 'copy failed';
+      btn.textContent = ok ? 'Copied' : 'Copy failed';
       setTimeout(() => { btn.textContent = prior; }, 1500);
     },
   }];
 
   return buildItem({
     primary: p.name || '(unnamed)',
-    secondary: enabled ? 'enabled' : 'disabled',
+    secondary: enabled ? 'Enabled' : 'Disabled',
     secondaryClass: enabled ? 'health-good' : 'health-warn',
     tags,
     path: p.path ? shortenPath(p.path) : '',
-    sourceLabel: p.scope ? `installed in ${scopeLabel(p.scope)}:` : 'installed at:',
+    sourceLabel: p.scope ? `Installed in ${scopeLabel(p.scope)}:` : 'Installed at:',
     sourcePath: p.path || '',
     fullRecord: p,
     actions,

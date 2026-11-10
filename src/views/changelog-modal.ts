@@ -56,7 +56,7 @@ export function openChangelogModal({ currentVersion = '' }: ChangelogOptions = {
   const refreshBtn = el('button', {
     type: 'button',
     class: 'changelog-modal__refresh',
-    title: 'refresh from github',
+    title: 'Refresh from GitHub',
     'aria-label': 'refresh',
     onclick: () => loadReleases({ force: true }),
     innerHTML: iconHtml('refresh-cw'),
@@ -70,7 +70,7 @@ export function openChangelogModal({ currentVersion = '' }: ChangelogOptions = {
       el('div', { class: 'changelog-modal__title' },
         el('span', { class: 'changelog-modal__title-text' }, 'Changelog'),
         currentVersion
-          ? el('span', { class: 'changelog-modal__current' }, `running v${currentVersion}`)
+          ? el('span', { class: 'changelog-modal__current' }, `Running v${currentVersion}`)
           : null,
       ),
       el('div', { class: 'changelog-modal__head-actions' },
@@ -114,16 +114,16 @@ export function openChangelogModal({ currentVersion = '' }: ChangelogOptions = {
 
   function renderResult(data: ReleasesResult | null | undefined): void {
     if (!data || !data.ok) {
-      const reason = data && (data.error || data.detail) || 'unknown error';
-      renderError(`could not load releases: ${reason}`);
+      const reason = data && (data.error || data.detail) || 'Unknown error';
+      renderError(`Could not load releases: ${reason}`);
       return;
     }
     const list = Array.isArray(data.releases) ? data.releases : [];
     if (!list.length) {
       body.replaceChildren(el('div', { class: 'changelog-modal__empty' },
-        el('div', { class: 'changelog-modal__empty-headline' }, 'no releases yet'),
+        el('div', { class: 'changelog-modal__empty-headline' }, 'No releases yet'),
         el('div', { class: 'changelog-modal__empty-sub' },
-          'releases are tagged automatically by the release workflow on every push to main.'),
+          'Releases are tagged automatically by the release workflow on every push to main.'),
       ));
       return;
     }
@@ -137,13 +137,13 @@ export function openChangelogModal({ currentVersion = '' }: ChangelogOptions = {
         href: `https://github.com/${data.repo}/releases`,
         target: '_blank',
         rel: 'noreferrer noopener',
-      }, 'view on GitHub'),
+      }, 'View on GitHub'),
     );
   }
 
   function renderError(message: string): void {
     body.replaceChildren(el('div', { class: 'changelog-modal__error' },
-      el('div', { class: 'changelog-modal__error-headline' }, 'changelog unavailable'),
+      el('div', { class: 'changelog-modal__error-headline' }, 'Changelog unavailable'),
       el('div', { class: 'changelog-modal__error-sub' }, message),
       el('button', {
         type: 'button',
@@ -155,7 +155,7 @@ export function openChangelogModal({ currentVersion = '' }: ChangelogOptions = {
 }
 
 function loadingRow(): HTMLElement {
-  return el('div', { class: 'changelog-modal__loading' }, 'loading releases...') as HTMLElement;
+  return el('div', { class: 'changelog-modal__loading' }, 'Loading releases…') as HTMLElement;
 }
 
 function releaseRow(r: ReleaseSummary, isLatest: boolean): HTMLElement {
@@ -186,7 +186,7 @@ function releaseRow(r: ReleaseSummary, isLatest: boolean): HTMLElement {
     ),
     r.body
       ? renderBody(r.body)
-      : el('div', { class: 'changelog-release__empty' }, 'no notes for this release.'),
+      : el('div', { class: 'changelog-release__empty' }, 'No notes for this release.'),
   ) as HTMLElement;
 }
 

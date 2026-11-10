@@ -211,6 +211,72 @@ export function assignAgentToFolder(agentId: string, folderId: string | null): F
   return target ? (data.folders.find((f) => f.id === target!.id) || null) : null;
 }
 
+export function ensureFolderByName(name: string): Folder {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) throw new Error('folder name required');
+  if (trimmed.toLowerCase() === ARCHIVED_FOLDER_NAME.toLowerCase()) {
+    const data = readAll();
+    return data.folders.find((f) => f.id === ARCHIVED_FOLDER_ID) || makeArchivedFolder();
+  }
+  const data = readAll();
+  const hit = data.folders.find((f) => !f.system && f.name.toLowerCase() === trimmed.toLowerCase());
+  if (hit) return hit;
+  return createFolder(trimmed);
+}
+
+export function agentFolderId(agentId: string): string | null {
+  if (!agentId) return null;
+  for (const f of listFolders()) {
+    if (f.agentIds.includes(agentId)) return f.id;
+  }
+  return null;
+}
+
+export function syncAgentsToProjectFolders(
+  agents: Array<{ id: string; cwd?: string; archived?: boolean }>,
+  groupName: (cwd: string) => string,
+): boolean {
+  let changed = false;
+  const placed = new Set<string>();
+  for (const f of listFolders()) {
+    if (f.id === ARCHIVED_FOLDER_ID) {
+      for (const id of f.agentIds) placed.add(id);
+    }
+  }
+  for (const a of agents) {
+    if (!a || !a.id || a.archived) continue;
+    if (placed.has(a.id)) continue;
+    const current = agentFolderId(a.id);
+    if (current && current !== ARCHIVED_FOLDER_ID) continue;
+    const name = groupName(a.cwd || '');
+    if (!name) continue;
+    const folder = ensureFolderByName(name);
+    if (current === folder.id) continue;
+    assignAgentToFolder(a.id, folder.id);
+    changed = true;
+  }
+  return changed;
+}
+
+export function pruneMissingAgentsFromFolders(liveIds: Iterable<string>): boolean {
+  const live = new Set(liveIds);
+  const data = readAll();
+  let changed = false;
+  data.folders = data.folders.map((f) => {
+    const next = f.agentIds.filter((id) => live.has(id));
+    if (next.length === f.agentIds.length) return f;
+    changed = true;
+    return { ...f, agentIds: next };
+  });
+  const kept = data.folders.filter((f) => f.system || f.agentIds.length > 0);
+  if (kept.length !== data.folders.length) {
+    data.folders = kept;
+    changed = true;
+  }
+  if (changed) writeAll(data);
+  return changed;
+}
+
 export function paths(): { root: string; file: string } {
   return { root: root(), file: file() };
 }

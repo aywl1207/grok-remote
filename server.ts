@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// grok-remote server
+// grok-remote HTTP entry. Route policy lives in lib/*-http.ts and lib/routes/.
+// See ARCHITECTURE.md. Do not put history compact or ACP here.
 
 import http, { type IncomingMessage, type ServerResponse } from 'node:http';
 import fs from 'node:fs';
@@ -16,23 +17,35 @@ import {
   updateFolder,
   removeFolder,
   assignAgentToFolder,
+  agentFolderId,
   setArchivedForAgent,
 } from './lib/folders.js';
 import { startRetentionTimer } from './lib/retention.js';
-import { inferDevServerUrl } from './lib/dev-url.js';
-import { readAll as readHistory } from './lib/history.js';
-import { writeHeaders as sseHeaders, writeEvent as sseWrite, writePing as ssePing } from './lib/sse.js';
+import { handleHistoryGet } from './lib/history-http.js';
+import { resolveConversationWindow } from './lib/context-window.js';
+import { deriveContextStatus } from './lib/context-status.js';
+import { readCatalogModels } from './lib/model-catalog.js';
+import { readSubagentInheritance, writeSubagentInheritance } from './lib/grok-features.js';
+import { handleFilesList, handleFilesRaw, handleFilesPutRaw } from './lib/files-http.js';
+import { bindTerminalHttp } from './lib/terminals-http.js';
+import { bindSseHttp } from './lib/sse-http.js';
 import { buildTrace, buildTraceForSessionId } from './lib/trace-host.js';
 import { handleSystem } from './lib/routes/system.js';
 import { runGrokText, errorToResponse } from './lib/grok-cli.js';
 import {
+  loadOidcConfig,
+  handleOidcRoute,
+  enforceOidc,
+} from './lib/oidc.js';
+import { handleAuthApi } from './lib/auth-routes.js';
+import { staticCacheControl } from './lib/static-cache.js';
+import { inferCwdForFolder } from './lib/conversation-folder.js';
+import {
   readCurrentVersion,
   readLatestVersion,
   readDiff as readVersionDiff,
-  runUpdate as runVersionUpdate,
   isUpdateInProgress,
   readReleases,
-  type UpdateStepEvent,
 } from './lib/version-update.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -66,6 +79,15 @@ const MIME: Record<string, string> = {
 };
 
 const manager = new AgentManager();
+const termHttp = bindTerminalHttp(manager);
+const sseHttp = bindSseHttp(manager);
+
+if (loadOidcConfig()) {
+  const boot = loadOidcConfig();
+  console.log(`[grok-remote] OIDC enabled issuer=${boot && boot.issuer}`);
+} else {
+  console.log('[grok-remote] OIDC off (set OIDC_ISSUER / OIDC_CLIENT_ID / OIDC_CLIENT_SECRET)');
+}
 
 interface TailscaleIdentity {
   backend: string;
@@ -100,6 +122,13 @@ function serveStatic(req: IncomingMessage, res: ServerResponse): void {
   const rel = url === '/' ? '/index.html' : url;
   let target = safeJoin(DIST, rel);
   if (!target || !fs.existsSync(target) || fs.statSync(target).isDirectory()) {
+    // Hashed Vite assets must 404, not fall back to index.html — that
+    // makes the browser treat HTML as a JS module and the UI goes blank.
+    if (rel.startsWith('/assets/')) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('not found\n');
+      return;
+    }
     target = path.join(DIST, 'index.html');
   }
   if (!fs.existsSync(target)) {
@@ -108,9 +137,13 @@ function serveStatic(req: IncomingMessage, res: ServerResponse): void {
     return;
   }
   const ext = path.extname(target).toLowerCase();
-  res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+  res.writeHead(200, {
+    'Content-Type': MIME[ext] || 'application/octet-stream',
+    'Cache-Control': staticCacheControl(rel),
+  });
   fs.createReadStream(target).pipe(res);
 }
+
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -147,10 +180,6 @@ function matchAgentRoute(url: string): { id: string; suffix: string } | null {
   const m = url.match(/^\/api\/agents\/([^\/]+)(\/[^?]*)?$/);
   if (!m || !m[1]) return null;
   return { id: m[1], suffix: m[2] || '' };
-}
-
-function isNodeErr(err: unknown): err is NodeJS.ErrnoException {
-  return typeof err === 'object' && err !== null && 'code' in (err as object);
 }
 
 async function handleApi(req: IncomingMessage, res: ServerResponse, url: string, method: string): Promise<void> {
@@ -223,7 +252,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: string,
       sendJson(res, 409, { ok: false, error: 'update already in progress' });
       return;
     }
-    handleVersionUpdateStream(req, res);
+    sseHttp.handleVersionUpdateStream(req, res);
     return;
   }
 
@@ -244,13 +273,23 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: string,
     return;
   }
 
+  if (url === '/api/auth' || url.startsWith('/api/auth/')) {
+    try {
+      if (await handleAuthApi(req, res, url, method)) return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      sendJson(res, 400, { ok: false, error: msg });
+      return;
+    }
+  }
+
   if (url === '/api/agents' && method === 'GET') {
     sendJson(res, 200, manager.list());
     return;
   }
 
   if (url === '/api/agents/stream' && method === 'GET') {
-    handleAgentsStream(req, res);
+    sseHttp.handleAgentsStream(req, res);
     return;
   }
 
@@ -296,6 +335,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: string,
       }
       if (method === 'DELETE') {
         const ok = removeFolder(id);
+        if (ok) manager.emit('list_changed', { event: 'folders_changed' });
         sendJson(res, ok ? 200 : 404, { ok });
         return;
       }
@@ -303,7 +343,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: string,
   }
 
   if (url === '/api/bg-terminals' && method === 'GET') {
-    handleGlobalBgTerminals(_req(req), res);
+    termHttp.handleGlobalBgTerminals(req, res);
     return;
   }
 
@@ -411,12 +451,27 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: string,
       if (typeof settings['alwaysApprove'] !== 'boolean' && typeof defaults.autoApprove === 'boolean') {
         settings['alwaysApprove'] = defaults.autoApprove;
       }
+      const folderId = typeof body['folderId'] === 'string' ? body['folderId'].trim() : '';
+      let cwd = typeof body['cwd'] === 'string' ? body['cwd'] : '';
+      if (!cwd && folderId) {
+        const folder = listFolders().find((f) => f.id === folderId);
+        const siblingIds = new Set(folder ? folder.agentIds : []);
+        const siblingCwds = manager.list()
+          .filter((a) => siblingIds.has(a.id))
+          .map((a) => a.cwd);
+        cwd = inferCwdForFolder({ folderName: folder?.name, siblingCwds });
+      }
       const merged = {
         ...body,
         settings,
-        ...(!body['cwd'] && defaults.defaultCwd ? { cwd: defaults.defaultCwd } : {}),
+        ...(!cwd && defaults.defaultCwd ? { cwd: defaults.defaultCwd } : {}),
+        ...(cwd ? { cwd } : {}),
       };
       const rec = await manager.spawn(merged as never);
+      if (folderId) {
+        try { assignAgentToFolder(rec.id, folderId); }
+        catch { /* folder assignment should not fail the spawn */ }
+      }
       sendJson(res, 201, rec);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -473,9 +528,10 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: string,
     }
     if (suffix === '/prompt' && method === 'POST') {
       try {
-        const body = (await readJsonBody(req)) as { text?: unknown; attachments?: unknown };
+        const body = (await readJsonBody(req)) as { text?: unknown; attachments?: unknown; force?: unknown };
         const text = body?.text;
         const attachments = Array.isArray(body?.attachments) ? body.attachments as Record<string, unknown>[] : [];
+        const force = body?.force === true;
         const hasText = typeof text === 'string' && text.length > 0;
         if (!hasText && !attachments.length) {
           sendJson(res, 400, { ok: false, error: 'text or attachments required' });
@@ -501,8 +557,26 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: string,
             return;
           }
         }
-        const result = await manager.prompt(id, { text: hasText ? (text as string) : '', attachments: attachments as never });
+        const result = await manager.prompt(id, { text: hasText ? (text as string) : '', attachments: attachments as never, force });
         sendJson(res, 202, { ok: true, accepted: true, debug: result?.debug || null });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        sendJson(res, 400, { ok: false, error: msg });
+      }
+      return;
+    }
+    if (suffix === '/interject' && method === 'POST') {
+      try {
+        const body = (await readJsonBody(req)) as { text?: unknown; attachments?: unknown };
+        const text = body?.text;
+        const attachments = Array.isArray(body?.attachments) ? body.attachments as Record<string, unknown>[] : [];
+        const hasText = typeof text === 'string' && text.length > 0;
+        if (!hasText && !attachments.length) {
+          sendJson(res, 400, { ok: false, error: 'text or attachments required' });
+          return;
+        }
+        const result = await manager.interject(id, { text: hasText ? (text as string) : '', attachments: attachments as never });
+        sendJson(res, 200, { ok: true, steered: true, rpc: result.rpc, debug: result.debug || null });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         sendJson(res, 400, { ok: false, error: msg });
@@ -512,6 +586,93 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: string,
     if (suffix === '/cancel' && method === 'POST') {
       await manager.cancel(id);
       sendJson(res, 202, { ok: true, accepted: true });
+      return;
+    }
+    if (suffix === '/rewind' && method === 'POST') {
+      try {
+        const body = (await readJsonBody(req) || {}) as { keepTurns?: number };
+        const out = await manager.rewind(id, Number(body.keepTurns || 0));
+        sendJson(res, 200, out);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        sendJson(res, 400, { ok: false, error: msg });
+      }
+      return;
+    }
+    if (suffix === '/compact' && method === 'POST') {
+      try {
+        const body = (await readJsonBody(req) || {}) as { context?: unknown };
+        const context = typeof body.context === 'string' ? body.context : '';
+        // Compact takes ~1–2 min. Do not hold the HTTP request open — iPad /
+        // proxies drop it and the UI then paints "Compact failed" even when
+        // Grok finished. Lifecycle is auto_compact_started/completed over SSE.
+        void manager.compact(id, { context }).catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          process.stderr.write(`[compact] ${id} ${msg}\n`);
+        });
+        sendJson(res, 202, { ok: true, accepted: true });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        sendJson(res, 400, { ok: false, error: msg });
+      }
+      return;
+    }
+    if (suffix === '/fork' && method === 'POST') {
+      try {
+        const body = (await readJsonBody(req) || {}) as {
+          name?: string;
+          directive?: string;
+          folderId?: string | null;
+        };
+        const out = await manager.fork(id, body);
+        const requested = Object.prototype.hasOwnProperty.call(body, 'folderId');
+        let dest: string | null = null;
+        if (requested) {
+          const raw = body.folderId;
+          dest = raw == null || String(raw).trim() === '' || String(raw) === 'archived'
+            ? null
+            : String(raw).trim();
+        } else {
+          const current = agentFolderId(id);
+          dest = current && current !== 'archived' ? current : null;
+        }
+        if (dest) {
+          try {
+            assignAgentToFolder(out.id, dest);
+            manager.emit('list_changed', { event: 'folders_changed' });
+          } catch { /* folder assignment should not fail the fork */ }
+        }
+        sendJson(res, 201, out);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        sendJson(res, 400, { ok: false, error: msg });
+      }
+      return;
+    }
+    if (suffix === '/permission' && method === 'POST') {
+      try {
+        const body = (await readJsonBody(req) || {}) as { requestId?: string; optionId?: string };
+        const ok = manager.respondPermission(id, String(body.requestId || ''), String(body.optionId || ''));
+        sendJson(res, ok ? 200 : 404, { ok });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        sendJson(res, 400, { ok: false, error: msg });
+      }
+      return;
+    }
+    if (suffix === '/interactions' && method === 'GET') {
+      sendJson(res, 200, { items: manager.pendingRequests(id) });
+      return;
+    }
+    if (suffix === '/interaction' && method === 'POST') {
+      try {
+        const body = (await readJsonBody(req) || {}) as { requestId?: string; result?: unknown };
+        const ok = manager.respondInteraction(id, String(body.requestId || ''), body.result);
+        sendJson(res, ok ? 200 : 404, { ok });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        sendJson(res, 400, { ok: false, error: msg });
+      }
       return;
     }
     if (suffix === '/disconnect' && method === 'POST') {
@@ -526,7 +687,12 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: string,
     }
     if (suffix === '/connect' && method === 'POST') {
       try {
-        const out = await manager.connect(id);
+        const body = (await readJsonBody(req)) as { recreateHold?: unknown; freshSession?: unknown; forkSession?: unknown };
+        const out = await manager.connect(id, {
+          recreateHold: body && body.recreateHold === true,
+          freshSession: body && body.freshSession === true,
+          forkSession: body && body.forkSession === true,
+        });
         sendJson(res, 202, out);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -534,18 +700,34 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: string,
       }
       return;
     }
-    if (suffix === '/history' && method === 'GET') {
-      const urlObj = new URL(req.url || '/', 'http://x');
-      const all = urlObj.searchParams.get('all') === '1';
-      const turnsParam = parseInt(urlObj.searchParams.get('turns') || '50', 10);
-      const turns = Number.isFinite(turnsParam) && turnsParam > 0 ? turnsParam : 50;
-      const sliced = sliceHistoryByTurns(readHistory(id) || '', { all, turns });
-      res.writeHead(200, {
-        'Content-Type': 'application/x-ndjson; charset=utf-8',
-        'X-Total-Turns': String(sliced.totalTurns),
-        'X-Returned-Turns': String(sliced.returnedTurns),
+    if (suffix === '/context' && method === 'GET') {
+      const used = typeof rec.totalTokens === 'number' ? rec.totalTokens : 0;
+      const model = (rec.settings && (rec.settings as { model?: string }).model) || rec.model || '';
+      const app = loadSettings();
+      const settings = (rec.settings && typeof rec.settings === 'object')
+        ? rec.settings as Record<string, unknown>
+        : null;
+      const win = resolveConversationWindow({
+        modelId: String(model || ''),
+        settings,
+        defaults: {
+          contextWindow: app['defaultContextWindow'],
+          compactAtPercent: app['defaultCompactAtPercent'],
+        },
       });
-      res.end(sliced.text);
+      sendJson(res, 200, deriveContextStatus({
+        used,
+        window: win.window,
+        compactAtPercent: win.compactAtKnown ? win.compactAtPercent : undefined,
+        compactAtKnown: win.compactAtKnown,
+        compactionsRemaining: win.compactionsRemaining,
+        model: win.model || String(model || ''),
+        windows: win.windows,
+      }));
+      return;
+    }
+    if (suffix === '/history' && method === 'GET') {
+      handleHistoryGet(req, res, id, rec);
       return;
     }
     if (suffix === '/files' && method === 'GET') {
@@ -571,12 +753,16 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: string,
       handleFilesRaw(req, res, rec, method);
       return;
     }
+    if (suffix === '/files/raw' && method === 'PUT') {
+      await handleFilesPutRaw(req, res, rec);
+      return;
+    }
     if (suffix === '/stream' && method === 'GET') {
-      handleStream(req, res, id);
+      sseHttp.handleStream(req, res, id);
       return;
     }
     if (suffix === '/terminals' && method === 'GET') {
-      handleTerminalList(req, res, rec);
+      termHttp.handleTerminalList(req, res, rec);
       return;
     }
     {
@@ -584,14 +770,14 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: string,
       if (tmatch) {
         const tid = tmatch[1] || '';
         const kill = !!tmatch[2];
-        if (kill && method === 'POST')  { handleTerminalKill(req, res, rec, tid); return; }
-        if (!kill && method === 'GET')  { handleTerminalRead(req, res, rec, tid); return; }
+        if (kill && method === 'POST')  { termHttp.handleTerminalKill(req, res, rec, tid); return; }
+        if (!kill && method === 'GET')  { termHttp.handleTerminalRead(req, res, rec, tid); return; }
       }
     }
     {
       const bgmatch = suffix.match(/^\/bg-tasks\/([^/]+)$/);
       if (bgmatch && method === 'GET') {
-        handleBgTaskRead(req, res, rec, bgmatch[1] || '');
+        termHttp.handleBgTaskRead(req, res, rec, bgmatch[1] || '');
         return;
       }
     }
@@ -632,640 +818,57 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: string,
   sendJson(res, 404, { ok: false, error: 'not found' });
 }
 
-interface SliceHistoryOptions { all: boolean; turns: number }
-interface SliceHistoryResult { text: string; totalTurns: number; returnedTurns: number }
-
-function sliceHistoryByTurns(raw: string, { all, turns }: SliceHistoryOptions): SliceHistoryResult {
-  if (!raw) return { text: '', totalTurns: 0, returnedTurns: 0 };
-  const lines = raw.split('\n').filter(Boolean);
-  const userMessageIndices: number[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] || '';
-    if (line.indexOf('"user_message"') === -1) continue;
-    try {
-      const obj = JSON.parse(line) as { event?: string };
-      if (obj && obj.event === 'user_message') userMessageIndices.push(i);
-    } catch { /* skip malformed */ }
-  }
-  const totalTurns = userMessageIndices.length;
-  if (all || totalTurns <= turns) {
-    return { text: lines.join('\n') + (lines.length ? '\n' : ''), totalTurns, returnedTurns: totalTurns };
-  }
-  const cutoffLineIdx = userMessageIndices[totalTurns - turns];
-  if (cutoffLineIdx == null) {
-    return { text: lines.join('\n') + (lines.length ? '\n' : ''), totalTurns, returnedTurns: totalTurns };
-  }
-  const sliced = lines.slice(cutoffLineIdx);
-  return { text: sliced.join('\n') + '\n', totalTurns, returnedTurns: turns };
-}
-
-const FILE_MAX_BYTES = 256_000;
-
-function withinAgentScope(scopeDir: string, target: string): boolean {
-  const scope = path.resolve(scopeDir);
-  const resolved = path.resolve(target);
-  return resolved === scope || resolved.startsWith(scope + path.sep);
-}
-
-function _req(req: IncomingMessage): IncomingMessage { return req; }
-
-function handleFilesList(req: IncomingMessage, res: ServerResponse, rec: PublicAgent): void {
-  const cwd = rec && rec.cwd;
-  if (!cwd) { sendJson(res, 404, { ok: false, error: 'agent cwd missing' }); return; }
-
-  const urlObj = new URL(req.url || '/', 'http://x');
-  const rel = urlObj.searchParams.get('path') || '';
-  const cleanRel = String(rel).replace(/^\/+/, '');
-
-  let target: string;
-  try {
-    target = path.resolve(cwd, cleanRel);
-  } catch {
-    sendJson(res, 400, { ok: false, error: 'invalid path' });
-    return;
-  }
-  if (!withinAgentScope(cwd, target)) {
-    sendJson(res, 400, { ok: false, error: 'path escapes agent scope' });
-    return;
-  }
-
-  let stat: fs.Stats;
-  try {
-    stat = fs.statSync(target);
-  } catch (err) {
-    if (isNodeErr(err) && err.code === 'ENOENT') {
-      sendJson(res, 404, { ok: false, error: 'path not found' });
-      return;
-    }
-    const msg = err instanceof Error ? err.message : String(err);
-    sendJson(res, 500, { ok: false, error: msg });
-    return;
-  }
-
-  if (stat.isDirectory()) {
-    let names: string[];
-    try {
-      names = fs.readdirSync(target);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      sendJson(res, 500, { ok: false, error: msg });
-      return;
-    }
-    interface DirEntry { name: string; type: 'directory'; entries: null; isHidden: boolean }
-    interface FileEntry { name: string; type: 'file'; size: number; mtime: string; isHidden: boolean }
-    const dirs: DirEntry[] = [];
-    const files: FileEntry[] = [];
-    for (const name of names) {
-      const full = path.join(target, name);
-      let s: fs.Stats;
-      try { s = fs.lstatSync(full); }
-      catch { continue; }
-      const isHidden = name.startsWith('.');
-      if (s.isDirectory()) {
-        dirs.push({ name, type: 'directory', entries: null, isHidden });
-      } else if (s.isFile()) {
-        files.push({
-          name,
-          type: 'file',
-          size: s.size,
-          mtime: s.mtime.toISOString(),
-          isHidden,
-        });
-      } else {
-        files.push({
-          name,
-          type: 'file',
-          size: s.size,
-          mtime: s.mtime.toISOString(),
-          isHidden,
-        });
-      }
-    }
-    const cmp = <T extends { isHidden: boolean; name: string }>(a: T, b: T): number => {
-      if (a.isHidden !== b.isHidden) return a.isHidden ? 1 : -1;
-      return a.name.localeCompare(b.name);
-    };
-    dirs.sort(cmp);
-    files.sort(cmp);
-    sendJson(res, 200, {
-      type: 'directory',
-      path: cleanRel,
-      entries: [...dirs, ...files],
-    });
-    return;
-  }
-
-  if (stat.isFile()) {
-    if (stat.size > FILE_MAX_BYTES) {
-      sendJson(res, 200, {
-        type: 'file',
-        path: cleanRel,
-        size: stat.size,
-        truncated: true,
-        content: null,
-        reason: 'too_large',
-      });
-      return;
-    }
-    let buf: Buffer;
-    try {
-      buf = fs.readFileSync(target);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      sendJson(res, 500, { ok: false, error: msg });
-      return;
-    }
-    const sniff = buf.subarray(0, Math.min(512, buf.length));
-    let binary = false;
-    for (let i = 0; i < sniff.length; i++) {
-      if (sniff[i] === 0) { binary = true; break; }
-    }
-    if (binary) {
-      sendJson(res, 200, {
-        type: 'file',
-        path: cleanRel,
-        size: stat.size,
-        binary: true,
-        content: null,
-      });
-      return;
-    }
-    sendJson(res, 200, {
-      type: 'file',
-      path: cleanRel,
-      size: stat.size,
-      binary: false,
-      mtime: stat.mtime.toISOString(),
-      content: buf.toString('utf8'),
-    });
-    return;
-  }
-
-  sendJson(res, 400, { ok: false, error: 'unsupported file type' });
-}
-
-const RAW_MAX_BYTES = 200 * 1024 * 1024;
-
-const RAW_MIME: Record<string, string> = {
-  '.png':  'image/png',
-  '.jpg':  'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif':  'image/gif',
-  '.webp': 'image/webp',
-  '.svg':  'image/svg+xml',
-  '.bmp':  'image/bmp',
-  '.ico':  'image/x-icon',
-  '.mp4':  'video/mp4',
-  '.webm': 'video/webm',
-  '.mov':  'video/quicktime',
-  '.ogv':  'video/ogg',
-  '.m4v':  'video/x-m4v',
-  '.mp3':  'audio/mpeg',
-  '.wav':  'audio/wav',
-  '.ogg':  'audio/ogg',
-  '.m4a':  'audio/mp4',
-  '.flac': 'audio/flac',
-  '.pdf':  'application/pdf',
-  '.txt':  'text/plain; charset=utf-8',
-  '.html': 'text/html; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-};
-
-type RangeParsed = { start: number; end: number } | { unsatisfiable: true } | null;
-
-function parseRange(headerVal: string | undefined, size: number): RangeParsed {
-  if (!headerVal || typeof headerVal !== 'string') return null;
-  const m = /^bytes=(\d*)-(\d*)$/.exec(headerVal.trim());
-  if (!m) return { unsatisfiable: true };
-  const startStr = m[1] || '';
-  const endStr = m[2] || '';
-  let start: number;
-  let end: number;
-  if (startStr === '' && endStr === '') return { unsatisfiable: true };
-  if (startStr === '') {
-    const n = parseInt(endStr, 10);
-    if (!Number.isFinite(n) || n <= 0) return { unsatisfiable: true };
-    start = Math.max(0, size - n);
-    end = size - 1;
-  } else {
-    start = parseInt(startStr, 10);
-    end = endStr === '' ? size - 1 : parseInt(endStr, 10);
-    if (!Number.isFinite(start) || !Number.isFinite(end)) return { unsatisfiable: true };
-  }
-  if (start > end || start < 0 || end >= size) return { unsatisfiable: true };
-  return { start, end };
-}
-
-function handleFilesRaw(req: IncomingMessage, res: ServerResponse, rec: PublicAgent, method: string): void {
-  const cwd = rec && rec.cwd;
-  if (!cwd) { sendJson(res, 404, { ok: false, error: 'agent cwd missing' }); return; }
-
-  const urlObj = new URL(req.url || '/', 'http://x');
-  const rel = urlObj.searchParams.get('path') || '';
-  const cleanRel = String(rel).replace(/^\/+/, '');
-
-  let target: string;
-  try {
-    target = path.resolve(cwd, cleanRel);
-  } catch {
-    sendJson(res, 400, { ok: false, error: 'invalid path' });
-    return;
-  }
-  if (!withinAgentScope(cwd, target)) {
-    sendJson(res, 400, { ok: false, error: 'path escapes agent scope' });
-    return;
-  }
-
-  let stat: fs.Stats;
-  try {
-    stat = fs.statSync(target);
-  } catch (err) {
-    if (isNodeErr(err) && err.code === 'ENOENT') {
-      sendJson(res, 404, { ok: false, error: 'path not found' });
-      return;
-    }
-    const msg = err instanceof Error ? err.message : String(err);
-    sendJson(res, 500, { ok: false, error: msg });
-    return;
-  }
-
-  if (stat.isDirectory()) {
-    sendJson(res, 400, { ok: false, error: 'path is a directory' });
-    return;
-  }
-  if (!stat.isFile()) {
-    sendJson(res, 400, { ok: false, error: 'unsupported file type' });
-    return;
-  }
-  if (stat.size > RAW_MAX_BYTES) {
-    res.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ ok: false, error: 'file too large' }));
-    return;
-  }
-
-  const ext = path.extname(target).toLowerCase();
-  const contentType = RAW_MIME[ext] || 'application/octet-stream';
-  const lastModified = stat.mtime.toUTCString();
-
-  const rangeHeader = req.headers['range'] as string | undefined;
-  const parsed = parseRange(rangeHeader, stat.size);
-  if (parsed && 'unsatisfiable' in parsed) {
-    res.writeHead(416, {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Content-Range': `bytes */${stat.size}`,
-    });
-    res.end(JSON.stringify({ ok: false, error: 'range not satisfiable' }));
-    return;
-  }
-
-  if (parsed) {
-    const { start, end } = parsed;
-    const chunkLen = end - start + 1;
-    res.writeHead(206, {
-      'Content-Type': contentType,
-      'Content-Length': String(chunkLen),
-      'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-      'Accept-Ranges': 'bytes',
-      'Cache-Control': 'no-store',
-      'Last-Modified': lastModified,
-    });
-    if (method === 'HEAD') { res.end(); return; }
-    const stream = fs.createReadStream(target, { start, end });
-    stream.on('error', () => { try { res.destroy(); } catch { /* ignore */ } });
-    stream.pipe(res);
-    return;
-  }
-
-  res.writeHead(200, {
-    'Content-Type': contentType,
-    'Content-Length': String(stat.size),
-    'Accept-Ranges': 'bytes',
-    'Cache-Control': 'no-store',
-    'Last-Modified': lastModified,
-  });
-  if (method === 'HEAD') { res.end(); return; }
-  const stream = fs.createReadStream(target);
-  stream.on('error', () => { try { res.destroy(); } catch { /* ignore */ } });
-  stream.pipe(res);
-}
-
-interface MergedTerminal {
-  id: string;
-  source: 'acp' | 'grok' | 'merged';
-  command: string;
-  cwd: string;
-  exited: boolean;
-  exitStatus: { exitCode: number | null; signal: string | NodeJS.Signals | null } | null;
-  bytes?: number;
-  truncated?: boolean;
-  outputFile: string | null;
-  startedAt: number | null;
-  endedAt: number | null;
-  url?: string;
-}
-
-function handleGlobalBgTerminals(_req2: IncomingMessage, res: ServerResponse): void {
-  const out: { agentId: string; agentName: string; terminals: MergedTerminal[] }[] = [];
-  let runningTotal = 0;
-  for (const rec of manager.list()) {
-    const a = manager.getRaw(rec.id);
-    const merged = mergeBgSources(a);
-    for (const t of merged) if (!t.exited) runningTotal++;
-    if (merged.length) {
-      out.push({ agentId: rec.id, agentName: rec.name || rec.id, terminals: merged });
-    }
-  }
-  sendJson(res, 200, { ok: true, runningCount: runningTotal, agents: out });
-}
-
-function mergeBgSources(a: ReturnType<typeof manager.getRaw>): MergedTerminal[] {
-  const byId = new Map<string, MergedTerminal>();
-  const host = a && a.client && a.client.terminalHost;
-  if (host && host._terminals) {
-    for (const t of host._terminals.values()) {
-      byId.set(t.id, {
-        id: t.id,
-        source: 'acp',
-        command: t.command,
-        cwd: t.cwd,
-        exited: !!t.exited,
-        exitStatus: t.exitStatus || null,
-        bytes: t.buffer ? t.buffer.length : 0,
-        truncated: !!t.truncated,
-        outputFile: null,
-        startedAt: null,
-        endedAt: null,
-      });
-    }
-  }
-  if (a && a.bgTasks && a.bgTasks.size) {
-    for (const t of a.bgTasks.values()) {
-      const grokStatus = (t.exit_code != null || t.signal)
-        ? { exitCode: t.exit_code, signal: t.signal }
-        : null;
-      const existing = byId.get(t.id);
-      if (existing) {
-        existing.source = 'merged';
-        existing.command = t.command || existing.command;
-        existing.cwd = t.cwd || existing.cwd;
-        existing.outputFile = t.output_file || existing.outputFile;
-        existing.startedAt = t.startedAt || existing.startedAt;
-        existing.endedAt = t.endedAt || existing.endedAt;
-        if (t.completed && !existing.exited) existing.exited = true;
-        if (!existing.exitStatus && grokStatus) existing.exitStatus = grokStatus;
-      } else {
-        byId.set(t.id, {
-          id: t.id,
-          source: 'grok',
-          command: t.command,
-          cwd: t.cwd,
-          outputFile: t.output_file || null,
-          exited: !!t.completed,
-          exitStatus: grokStatus,
-          startedAt: t.startedAt,
-          endedAt: t.endedAt || null,
-        });
-      }
-    }
-  }
-  for (const t of byId.values()) {
-    if (!t.url) {
-      let output = '';
-      if (t.source === 'acp' || t.source === 'merged') {
-        const acpT = host && host._terminals && host._terminals.get(t.id);
-        if (acpT && acpT.buffer) {
-          output = acpT.buffer.toString('utf8', 0, Math.min(acpT.buffer.length, 16 * 1024));
-        }
-      }
-      if (!output && t.outputFile) {
-        try {
-          const buf = readFileTail(t.outputFile, 16 * 1024);
-          if (buf) output = buf.toString('utf8');
-        } catch { /* ignore */ }
-      }
-      if (!output && (t.source === 'grok' || t.source === 'merged')) {
-        const bg = a && a.bgTasks && a.bgTasks.get(t.id);
-        if (bg && typeof bg.cached_output === 'string' && bg.cached_output.length) {
-          output = bg.cached_output;
-        }
-      }
-      const url2 = inferDevServerUrl(t.command, output);
-      if (url2) t.url = url2;
-    }
-  }
-  return [...byId.values()].sort((x, y) => (y.startedAt || 0) - (x.startedAt || 0));
-}
-
-function readFileTail(filePath: string, n: number): Buffer | null {
-  try {
-    const st = fs.statSync(filePath);
-    const size = st.size;
-    if (size <= n) return fs.readFileSync(filePath);
-    const fd = fs.openSync(filePath, 'r');
-    const buf = Buffer.alloc(n);
-    fs.readSync(fd, buf, 0, n, size - n);
-    fs.closeSync(fd);
-    return buf;
-  } catch { return null; }
-}
-
-function handleTerminalList(_req2: IncomingMessage, res: ServerResponse, rec: PublicAgent): void {
-  const a = manager.getRaw(rec.id);
-  sendJson(res, 200, { ok: true, terminals: mergeBgSources(a) });
-}
-
-function handleTerminalRead(req: IncomingMessage, res: ServerResponse, rec: PublicAgent, tid: string): void {
-  const a = manager.getRaw(rec.id);
-  const host = a && a.client && a.client.terminalHost;
-  const t = host && host._terminals && host._terminals.get(tid);
-  if (t) {
-    const output = t.buffer ? t.buffer.toString('utf8') : '';
-    sendJson(res, 200, {
-      ok: true,
-      id: t.id,
-      source: 'acp',
-      command: t.command,
-      cwd: t.cwd,
-      exited: !!t.exited,
-      exitStatus: t.exitStatus || null,
-      truncated: !!t.truncated,
-      output,
-      url: inferDevServerUrl(t.command, output),
-    });
-    return;
-  }
-  handleBgTaskRead(req, res, rec, tid);
-}
-
-function handleBgTaskRead(_req2: IncomingMessage, res: ServerResponse, rec: PublicAgent, tid: string): void {
-  const a = manager.getRaw(rec.id);
-  const t = a && a.bgTasks && a.bgTasks.get(tid);
-  if (!t) { sendJson(res, 404, { ok: false, error: 'bg task not found' }); return; }
-  const TAIL_BYTES = 64 * 1024;
-  let output = '';
-  let truncated = false;
-  if (t.output_file) {
-    try {
-      const st = fs.statSync(t.output_file);
-      const size = st.size;
-      if (size > TAIL_BYTES) {
-        const fd = fs.openSync(t.output_file, 'r');
-        const buf = Buffer.alloc(TAIL_BYTES);
-        fs.readSync(fd, buf, 0, TAIL_BYTES, size - TAIL_BYTES);
-        fs.closeSync(fd);
-        output = buf.toString('utf8');
-        truncated = true;
-      } else {
-        output = fs.readFileSync(t.output_file, 'utf8');
-      }
-    } catch (err) {
-      if (typeof t.cached_output === 'string' && t.cached_output.length) {
-        output = t.cached_output;
-      } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        output = `[grok-remote] failed to read log: ${msg}`;
-      }
-    }
-  } else if (typeof t.cached_output === 'string' && t.cached_output.length) {
-    output = t.cached_output;
-  }
-  sendJson(res, 200, {
-    ok: true,
-    id: t.id,
-    source: 'grok',
-    command: t.command,
-    cwd: t.cwd,
-    outputFile: t.output_file || null,
-    startedAt: t.startedAt,
-    endedAt: t.endedAt || null,
-    exited: !!t.completed,
-    exitStatus: (t.exit_code != null || t.signal) ? { exitCode: t.exit_code, signal: t.signal } : null,
-    truncated,
-    output,
-    url: inferDevServerUrl(t.command, output),
-  });
-}
-
-function handleTerminalKill(_req2: IncomingMessage, res: ServerResponse, rec: PublicAgent, tid: string): void {
-  const a = manager.getRaw(rec.id);
-  const host = a && a.client && a.client.terminalHost;
-  const t = host && host._terminals && host._terminals.get(tid);
-  if (t) {
-    try {
-      if (t.proc && !t.exited) t.proc.kill('SIGTERM');
-    } catch { /* ignore */ }
-    sendJson(res, 200, { ok: true });
-    return;
-  }
-  const bg = a && a.bgTasks && a.bgTasks.get(tid);
-  if (!bg) { sendJson(res, 404, { ok: false, error: 'terminal not found' }); return; }
-  if (bg.completed) { sendJson(res, 200, { ok: true, alreadyExited: true }); return; }
-  const cwd = bg.cwd || '';
-  if (!cwd) { sendJson(res, 500, { ok: false, error: 'task has no cwd; cannot derive kill pattern' }); return; }
-  try {
-    spawnSync('/usr/bin/pkill', ['-TERM', '-f', cwd], { timeout: 4000 });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    sendJson(res, 500, { ok: false, error: `pkill failed: ${msg}` });
-    return;
-  }
-  bg.completed = true;
-  bg.signal    = bg.signal || 'killed-by-user';
-  bg.endedAt   = Date.now();
-  try { manager.emit('list_changed', { event: 'bg_tasks', id: rec.id, count: 0 }); } catch { /* ignore */ }
-  sendJson(res, 200, { ok: true, source: 'grok', killed: true });
-}
-
-function handleVersionUpdateStream(req: IncomingMessage, res: ServerResponse): void {
-  sseHeaders(res);
-  let counter = 0;
-  const send = (data: UpdateStepEvent): void => {
-    sseWrite(res, {
-      id: `vupd-${Date.now()}-${++counter}`,
-      event: 'update',
-      data,
-    });
-  };
-  send({ step: 'open', status: 'ok', detail: 'connected' });
-
-  const heartbeat = setInterval(() => ssePing(res), 5000);
-  let closed = false;
-  const cleanup = (): void => {
-    if (closed) return;
-    closed = true;
-    clearInterval(heartbeat);
-    if (!res.writableEnded) try { res.end(); } catch { /* ignore */ }
-  };
-  req.on('close', cleanup);
-  req.on('error', cleanup);
-
-  runVersionUpdate({
-    emit: (ev: UpdateStepEvent) => { if (!closed) send(ev); },
-  }).then(() => {
-    if (!closed) {
-      send({ step: 'done', status: 'ok', detail: 'all steps completed' });
-      cleanup();
-    }
-  }).catch((err: unknown) => {
-    if (!closed) {
-      const msg = err instanceof Error ? err.message : String(err);
-      send({ step: 'done', status: 'fail', detail: msg });
-      cleanup();
-    }
-  });
-}
-
-function handleAgentsStream(req: IncomingMessage, res: ServerResponse): void {
-  sseHeaders(res);
-  let counter = 0;
-  sseWrite(res, {
-    id: `agents-${Date.now()}-${++counter}`,
-    event: 'agents_snapshot',
-    data: { agents: manager.list() },
-  });
-  const onChange = (payload: { event?: string; [k: string]: unknown }): void => {
-    sseWrite(res, {
-      id: `agents-${Date.now()}-${++counter}`,
-      event: payload.event || 'agents_changed',
-      data: payload,
-    });
-  };
-  manager.on('list_changed', onChange);
-  const heartbeat = setInterval(() => ssePing(res), 15000);
-  const cleanup = (): void => {
-    clearInterval(heartbeat);
-    try { manager.off('list_changed', onChange); } catch { /* ignore */ }
-    if (!res.writableEnded) try { res.end(); } catch { /* ignore */ }
-  };
-  req.on('close', cleanup);
-  req.on('error', cleanup);
-}
-
-function handleStream(req: IncomingMessage, res: ServerResponse, id: string): void {
-  const ring = manager.ring(id);
-  if (!ring) { sendJson(res, 404, { ok: false, error: 'agent not found' }); return; }
-
-  sseHeaders(res);
-  const lastId = req.headers['last-event-id'] as string | undefined;
-  for (const ev of ring.since(lastId)) {
-    sseWrite(res, ev);
-  }
-
-  const unsub = manager.subscribe(id, (ev) => sseWrite(res, ev));
-  const heartbeat = setInterval(() => ssePing(res), 15000);
-
-  const cleanup = (): void => {
-    clearInterval(heartbeat);
-    try { unsub(); } catch { /* ignore */ }
-    if (!res.writableEnded) try { res.end(); } catch { /* ignore */ }
-  };
-
-  req.on('close', cleanup);
-  req.on('error', cleanup);
-}
-
 const server = http.createServer(async (req: IncomingMessage, res: ServerResponse) => {
   const url = (req.url || '').split('?')[0] || '/';
+  const oidcCfg = loadOidcConfig();
+  if (oidcCfg) {
+    try {
+      if (await handleOidcRoute(req, res, url, oidcCfg)) return;
+      if (!enforceOidc(req, res, url, oidcCfg)) return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!res.headersSent) {
+        res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end(`Sign-in error: ${msg}
+`);
+      }
+      return;
+    }
+  }
+  if (url === '/api/system/models' && (req.method || 'GET') === 'GET') {
+    const items = readCatalogModels();
+    if (items.length) {
+      sendJson(res, 200, { ok: true, source: 'cache', items });
+      return;
+    }
+  }
+  if (url === '/api/system/grok-features' && ((req.method || 'GET') === 'GET' || req.method === 'POST')) {
+    try {
+      if ((req.method || 'GET') === 'GET') {
+        sendJson(res, 200, {
+          ok: true,
+          subagentModelInheritance: readSubagentInheritance(),
+          applies: 'new-grok-sessions',
+        });
+      } else {
+        const body = await readJsonBody(req) as { subagentModelInheritance?: unknown };
+        if (!body || typeof body.subagentModelInheritance !== 'boolean') {
+          sendJson(res, 400, { ok: false, error: 'subagentModelInheritance boolean required' });
+          return;
+        }
+        writeSubagentInheritance(body.subagentModelInheritance);
+        sendJson(res, 200, {
+          ok: true,
+          subagentModelInheritance: body.subagentModelInheritance,
+          applies: 'new-grok-sessions',
+        });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!res.headersSent) sendJson(res, 500, { ok: false, error: msg });
+    }
+    return;
+  }
   if (url.startsWith('/api/system/')) {
     try {
       await handleSystem(req, res, url);
@@ -1293,12 +896,42 @@ const server = http.createServer(async (req: IncomingMessage, res: ServerRespons
 
 const retention = startRetentionTimer({ getSettings: loadSettings, manager: manager as never });
 
-server.listen(PORT, HOST, () => {
-  const ts = tailscaleIdentity();
-  const where = ts?.dns ? `http://${ts.dns}:${PORT}` : `http://${HOST}:${PORT}`;
-  console.log(`[grok-remote] listening on ${HOST}:${PORT}`);
-  console.log(`[grok-remote] tailnet url: ${where}`);
-});
+const REBIND_FLAG = path.join(os.homedir(), '.grok-remote', 'rebind-context');
+let rebindBusy = false;
+setInterval(() => {
+  try {
+    if (!fs.existsSync(REBIND_FLAG) || rebindBusy) return;
+    fs.unlinkSync(REBIND_FLAG);
+    rebindBusy = true;
+    process.stderr.write('[rebind-context] flag seen; rebinding resumed holds to config.toml window\n');
+    void manager.rebindContextWindows().then((rows) => {
+      process.stderr.write(`[rebind-context] done ${JSON.stringify(rows)}\n`);
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[rebind-context] failed: ${msg}\n`);
+    }).finally(() => { rebindBusy = false; });
+  } catch { /* ignore */ }
+}, 2000).unref();
+
+async function boot(): Promise<void> {
+  try { await manager.reconnectHeld(); }
+  catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[grok-remote] reconnectHeld failed:', msg);
+  }
+  try { manager.startTuiSessionSync(); }
+  catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[grok-remote] tui session sync failed:', msg);
+  }
+  server.listen(PORT, HOST, () => {
+    const ts = tailscaleIdentity();
+    const where = ts?.dns ? `http://${ts.dns}:${PORT}` : `http://${HOST}:${PORT}`;
+    console.log(`[grok-remote] listening on ${HOST}:${PORT}`);
+    console.log(`[grok-remote] tailnet url: ${where}`);
+  });
+}
+void boot();
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {

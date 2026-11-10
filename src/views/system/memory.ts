@@ -70,27 +70,27 @@ export async function mount(container: HTMLElement): Promise<void> {
       </header>
 
       <div class="memory-toolbar">
-        <input type="text" class="memory-search" placeholder="filter by name or content..." />
-        <button type="button" class="memory-refresh-btn">refresh</button>
+        <input type="text" class="memory-search" placeholder="Filter by name or content…" />
+        <button type="button" class="memory-refresh-btn">Refresh</button>
       </div>
 
       <div class="memory-layout">
         <aside class="memory-sidebar" data-role="sidebar">
-          <div class="memory-sidebar-loading">loading...</div>
+          <div class="memory-sidebar-loading">Loading…</div>
         </aside>
         <div class="memory-viewer" data-role="viewer">
           <div class="memory-viewer-empty">
-            pick a memory file from the sidebar to view its content.
+            Pick a memory file from the sidebar to view its content.
           </div>
         </div>
       </div>
 
       <footer class="memory-footer">
         <button type="button" class="memory-clear-all-btn" data-stage="idle">
-          clear all memory
+          Clear All Memory
         </button>
         <span class="memory-footer-note">
-          click twice to confirm. invokes <code>grok memory clear --all</code>.
+          Click twice to confirm. Invokes <code>grok memory clear --all</code>.
         </span>
       </footer>
 
@@ -115,7 +115,7 @@ export function unmount(): void {
 
 async function reload(container: HTMLElement): Promise<void> {
   const sidebar = container.querySelector<HTMLElement>('[data-role="sidebar"]');
-  if (sidebar) sidebar.innerHTML = `<div class="memory-sidebar-loading">loading...</div>`;
+  if (sidebar) sidebar.innerHTML = `<div class="memory-sidebar-loading">Loading…</div>`;
   try {
     const data = await api.memory.get() as MemoryData;
     if (aborted || activeContainer !== container) return;
@@ -141,7 +141,7 @@ function showError(container: HTMLElement, msg: string): void {
   const errEl = container.querySelector<HTMLElement>('[data-role="error"]');
   if (!errEl) return;
   errEl.hidden = false;
-  errEl.textContent = msg || 'unknown error';
+  errEl.textContent = msg || 'Unknown error';
 }
 
 function clearError(container: HTMLElement): void {
@@ -159,7 +159,7 @@ function renderSidebar(container: HTMLElement): void {
   if (!roots.length) {
     const empty = document.createElement('div');
     empty.className = 'memory-sidebar-loading';
-    empty.textContent = 'no memory roots configured.';
+    empty.textContent = 'No memory roots configured.';
     sidebar.appendChild(empty);
     return;
   }
@@ -190,15 +190,15 @@ function renderScopeGroup(container: HTMLElement, root: MemoryRoot): HTMLElement
   const newBtn = document.createElement('button');
   newBtn.type = 'button';
   newBtn.className = 'memory-scope-btn';
-  newBtn.textContent = '+ new';
-  newBtn.title = 'create a new memory file in this scope';
+  newBtn.textContent = '+ New';
+  newBtn.title = 'Create a new memory file in this scope';
   newBtn.addEventListener('click', () => { void createFile(container, root.scope); });
   actions.appendChild(newBtn);
 
   const clearBtn = document.createElement('button');
   clearBtn.type = 'button';
   clearBtn.className = 'memory-scope-btn memory-scope-btn--warn';
-  clearBtn.textContent = 'clear';
+  clearBtn.textContent = 'Clear';
   clearBtn.title = `grok memory clear --${root.scope}`;
   clearBtn.addEventListener('click', () => { void clearScope(container, root.scope, clearBtn); });
   actions.appendChild(clearBtn);
@@ -221,9 +221,9 @@ function renderScopeGroup(container: HTMLElement, root: MemoryRoot): HTMLElement
   if (!filtered.length) {
     const empty = document.createElement('li');
     empty.className = 'memory-file-empty';
-    if (!root.exists) empty.textContent = '(directory not yet created)';
-    else if (!files.length) empty.textContent = '(no .md files)';
-    else empty.textContent = '(no matches)';
+    if (!root.exists) empty.textContent = '(Directory not yet created)';
+    else if (!files.length) empty.textContent = '(No .md files)';
+    else empty.textContent = '(No matches)';
     list.appendChild(empty);
   } else {
     for (const f of filtered) {
@@ -259,7 +259,7 @@ function renderFileRow(container: HTMLElement, rec: MemoryFile): HTMLElement {
 
   const snip = document.createElement('div');
   snip.className = 'memory-file-snip';
-  snip.textContent = rec.snippet || '(empty)';
+  snip.textContent = rec.snippet || '(Empty)';
 
   btn.appendChild(top);
   btn.appendChild(snip);
@@ -293,7 +293,7 @@ async function renderViewer(container: HTMLElement): Promise<void> {
   if (!selectedPath) {
     const empty = document.createElement('div');
     empty.className = 'memory-viewer-empty';
-    empty.textContent = 'pick a memory file from the sidebar to view its content.';
+    empty.textContent = 'Pick a memory file from the sidebar to view its content.';
     viewer.appendChild(empty);
     return;
   }
@@ -301,7 +301,7 @@ async function renderViewer(container: HTMLElement): Promise<void> {
   if (!rec) {
     const empty = document.createElement('div');
     empty.className = 'memory-viewer-empty';
-    empty.textContent = 'file not found (it may have been deleted).';
+    empty.textContent = 'File not found (it may have been deleted).';
     viewer.appendChild(empty);
     return;
   }
@@ -345,7 +345,7 @@ async function renderViewer(container: HTMLElement): Promise<void> {
 
   const body = document.createElement('div');
   body.className = 'memory-viewer-body';
-  body.textContent = 'loading...';
+  body.textContent = 'Loading…';
   viewer.appendChild(body);
 
   let content = '';
@@ -353,12 +353,12 @@ async function renderViewer(container: HTMLElement): Promise<void> {
     const r = await api.memory.read(rec.path) as ReadResponse;
     if (aborted || activeContainer !== container) return;
     if (r && r.ok) content = r.content || '';
-    else throw new Error((r && r.error) || 'read failed');
+    else throw new Error((r && r.error) || 'Read failed');
   } catch (err) {
     body.textContent = '';
     const errEl = document.createElement('div');
     errEl.className = 'memory-viewer-err';
-    errEl.textContent = 'read failed: ' + (err instanceof Error ? err.message : String(err));
+    errEl.textContent = 'Read failed: ' + (err instanceof Error ? err.message : String(err));
     body.appendChild(errEl);
     return;
   }
@@ -384,11 +384,11 @@ async function renderViewer(container: HTMLElement): Promise<void> {
   const saveBtn = document.createElement('button');
   saveBtn.type = 'button';
   saveBtn.className = 'memory-card-btn memory-card-btn--good';
-  saveBtn.textContent = 'save';
+  saveBtn.textContent = 'Save';
   const cancelBtn = document.createElement('button');
   cancelBtn.type = 'button';
   cancelBtn.className = 'memory-card-btn';
-  cancelBtn.textContent = 'cancel';
+  cancelBtn.textContent = 'Cancel';
   saveBtn.addEventListener('click', () => {
     void (async () => {
       saveBtn.disabled = true;
@@ -400,7 +400,7 @@ async function renderViewer(container: HTMLElement): Promise<void> {
         editing = false;
         await reload(container);
       } catch (err) {
-        status.textContent = 'save failed: ' + (err instanceof Error ? err.message : String(err));
+        status.textContent = 'Save failed: ' + (err instanceof Error ? err.message : String(err));
         saveBtn.disabled = false;
         cancelBtn.disabled = false;
       }
@@ -418,7 +418,7 @@ async function renderViewer(container: HTMLElement): Promise<void> {
 }
 
 async function createFile(container: HTMLElement, scope: string): Promise<void> {
-  const raw = window.prompt('new memory file name (kebab-case, .md optional):', '');
+  const raw = window.prompt('New memory file name (kebab-case, .md optional):', '');
   if (!raw) return;
   const trimmed = raw.trim();
   if (!trimmed) return;
@@ -434,10 +434,10 @@ async function createFile(container: HTMLElement, scope: string): Promise<void> 
       editing = true;
       await reload(container);
     } else {
-      alert('create failed: ' + ((r && r.error) || 'unknown'));
+      alert('Create failed: ' + ((r && r.error) || 'unknown'));
     }
   } catch (err) {
-    alert('create failed: ' + (err instanceof Error ? err.message : String(err)));
+    alert('Create failed: ' + (err instanceof Error ? err.message : String(err)));
   }
 }
 
@@ -451,7 +451,7 @@ async function deleteFile(container: HTMLElement, rec: MemoryFile): Promise<void
     }
     await reload(container);
   } catch (err) {
-    alert('delete failed: ' + (err instanceof Error ? err.message : String(err)));
+    alert('Delete failed: ' + (err instanceof Error ? err.message : String(err)));
   }
 }
 
@@ -491,18 +491,18 @@ function wireToolbar(container: HTMLElement): void {
       void (async () => {
         if (allBtn.dataset.stage !== 'armed') {
           allBtn.dataset.stage = 'armed';
-          allBtn.textContent = 'click again to confirm';
+          allBtn.textContent = 'Click again to confirm';
           setTimeout(() => {
             if (aborted) return;
             if (allBtn.dataset.stage === 'armed') {
               allBtn.dataset.stage = 'idle';
-              allBtn.textContent = 'clear all memory';
+              allBtn.textContent = 'Clear All Memory';
             }
           }, 4000);
           return;
         }
         allBtn.dataset.stage = 'idle';
-        allBtn.textContent = 'clear all memory';
+        allBtn.textContent = 'Clear All Memory';
         if (!window.confirm('Clear ALL memory (workspace + global)? This cannot be undone.')) return;
         clearError(container);
         allBtn.disabled = true;

@@ -1,17 +1,13 @@
 // grok-remote service worker.
 //
-// Caching strategy:
-//   - app shell: precache "/" and "/index.html" on install.
-//   - /api/*: network-first, never cached (live data).
-//   - other same-origin GETs: cache-first with background revalidation.
+// Never cache HTML or sw.js. iPad Home Screen apps otherwise keep a
+// weeks-old shell (old index.html + old hashed JS) after a rebuild.
+// Hashed /assets/* may be cached. /api/* is network only.
 
-const CACHE = 'gr-shell-v1';
-const SHELL_URLS = ['/', '/index.html', '/manifest.webmanifest'];
+const CACHE = 'gr-shell-v4';
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(SHELL_URLS)).then(() => self.skipWaiting())
-  );
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener('activate', (event) => {
@@ -29,36 +25,55 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // never cache API traffic.
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(fetch(req));
+  const accept = (req.headers && req.headers.get && req.headers.get('accept')) || '';
+  if (accept.indexOf('text/event-stream') !== -1
+      || url.pathname.endsWith('/stream')
+      || url.pathname.indexOf('/stream?') !== -1) {
     return;
   }
 
-  // cache-first with stale-while-revalidate.
-  event.respondWith(
-    caches.open(CACHE).then(async (cache) => {
-      const cached = await cache.match(req);
-      const networkFetch = fetch(req).then((resp) => {
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/')) {
+    event.respondWith(fetch(req, { cache: 'no-store', credentials: 'same-origin' }));
+    return;
+  }
+
+  const neverCache =
+    req.mode === 'navigate' ||
+    url.pathname === '/' ||
+    url.pathname === '/index.html' ||
+    url.pathname === '/sw.js' ||
+    url.pathname.endsWith('.webmanifest');
+
+  if (neverCache) {
+    event.respondWith(
+      fetch(req, { cache: 'no-store', credentials: 'same-origin' }).catch(async () => {
+        const cached = await caches.match(req);
+        if (cached) return cached;
+        return new Response('', { status: 504, statusText: 'offline' });
+      })
+    );
+    return;
+  }
+
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(
+      fetch(req).then((resp) => {
         if (resp && resp.status === 200 && resp.type === 'basic') {
-          cache.put(req, resp.clone()).catch(() => {});
+          caches.open(CACHE).then((cache) => cache.put(req, resp.clone())).catch(() => {});
         }
         return resp;
-      }).catch(() => null);
+      }).catch(async () => {
+        const cached = await caches.match(req);
+        if (cached) return cached;
+        return new Response('', { status: 504, statusText: 'offline' });
+      })
+    );
+    return;
+  }
 
-      if (cached) {
-        // revalidate in the background.
-        networkFetch.catch(() => {});
-        return cached;
-      }
-      const fresh = await networkFetch;
-      if (fresh) return fresh;
-      // last resort: shell fallback for navigations.
-      if (req.mode === 'navigate') {
-        const shell = await cache.match('/index.html');
-        if (shell) return shell;
-      }
-      return new Response('', { status: 504, statusText: 'offline' });
-    })
+  event.respondWith(
+    fetch(req, { cache: 'no-store', credentials: 'same-origin' }).catch(
+      () => new Response('', { status: 504, statusText: 'offline' }),
+    )
   );
 });

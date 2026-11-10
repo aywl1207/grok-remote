@@ -11,12 +11,36 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
+import net from 'node:net';
+import type { Socket } from 'node:net';
+
+import {
+  holdEnabled,
+  ensureHold,
+  stopHold,
+  holdRunning,
+  readHoldReady,
+  markHoldReady,
+  holdNeedsHandshake,
+} from './agent-hold.js';
+import { isLiveWorkUpdate } from './agent-status.js';
+import { buildSetModelParams } from './set-model.js';
+import { mergeArgvRules } from './model-identity.js';
+import { resolveGrokBin } from './grok-bin.js';
+
+/** Prefer the hold socket; in-process stdin is only used when not attached. */
+export function acpCanSend(
+  sock: { destroyed: boolean } | null,
+  proc: { stdin?: { writable?: boolean } | null } | null,
+): boolean {
+  if (sock && !sock.destroyed) return true;
+  return !!(proc && proc.stdin && proc.stdin.writable);
+}
 
 import { createTerminalHost, type TerminalHost } from './terminal-host.js';
 import { createFsHost, type FsHost } from './fs-host.js';
 import { createPermissionHost, type PermissionHost } from './permission-host.js';
-
-const GROK_BIN = process.env['GROK_BIN'] || 'grok';
+import { createInteractionHost, type InteractionHost } from './interaction-host.js';
 
 export interface AcpClientSettings {
   model?: string;
@@ -30,14 +54,20 @@ export interface AcpClientSettings {
   worktree?: boolean | string;
   sandbox?: string;
   alwaysApprove?: boolean;
+  permissionMode?: string;
+  autoMode?: boolean;
   [key: string]: unknown;
 }
 
 export interface AcpClientInit {
+  agentId?: string;
   cwd: string;
   env?: NodeJS.ProcessEnv;
   modelHint?: string | null;
   settings?: AcpClientSettings | null;
+  resumeSessionId?: string | null;
+  fork?: boolean;
+  onPermission?: (req: unknown) => void;
 }
 
 interface JsonRpcRequest {
@@ -82,8 +112,13 @@ export class AcpClient extends EventEmitter {
   env: NodeJS.ProcessEnv;
   modelHint: string | null;
   settings: AcpClientSettings | null;
+  resumeSessionId: string | null;
+  fork: boolean;
 
   proc: ChildProcess | null = null;
+  sock: Socket | null = null;
+  agentId: string | null = null;
+  held = false;
   sessionId: string | null = null;
   handshake: unknown = null;
   modelId: string | null = null;
@@ -95,22 +130,40 @@ export class AcpClient extends EventEmitter {
   terminalHost: TerminalHost;
   fsHost: FsHost;
   permissionHost: PermissionHost;
+  interactionHost: InteractionHost;
 
   private _pending = new Map<string | number, PendingRpc>();
   private _nextId = 1;
   private _closing = false;
   protected _activePromptId: string | null = null;
+  /** Nested session/prompt (UI compact fallback) must not idle the user turn. */
+  promptDepth = 0;
 
-  constructor({ cwd, env, modelHint, settings }: AcpClientInit) {
+  constructor({ agentId, cwd, env, modelHint, settings, resumeSessionId, fork, onPermission }: AcpClientInit) {
     super();
+    this.agentId = agentId || null;
     this.cwd = cwd;
     this.env = env || process.env;
     this.modelHint = modelHint || null;
     this.settings = settings && typeof settings === 'object' ? settings : null;
+    this.resumeSessionId = resumeSessionId || null;
+    this.fork = !!fork;
 
     this.terminalHost = createTerminalHost({ getCwd: () => this.cwd });
     this.fsHost = createFsHost({ getCwd: () => this.cwd });
-    this.permissionHost = createPermissionHost();
+    this.permissionHost = createPermissionHost({
+      onRequest: (req) => {
+        this.emit('permission_request', req);
+        try { onPermission?.(req); } catch { /* ignore */ }
+      },
+    });
+    this.interactionHost = createInteractionHost({
+      onRequest: (req) => {
+        this.emit('interaction_request', req);
+      },
+    });
+    const always = !(this.settings && this.settings.alwaysApprove === false);
+    this.permissionHost.setAuto(always);
   }
 
   private _buildArgv(): string[] {
@@ -127,9 +180,11 @@ export class AcpClient extends EventEmitter {
     if (typeof s.systemPromptOverride === 'string' && s.systemPromptOverride.length > 0) {
       top.push('--system-prompt-override', s.systemPromptOverride);
     }
-    if (typeof s.rules === 'string' && s.rules.length > 0) {
-      top.push('--rules', s.rules);
-    }
+    const rules = mergeArgvRules(
+      typeof s.rules === 'string' ? s.rules : '',
+      s.systemPromptOverride ? '' : model,
+    );
+    if (rules) top.push('--rules', rules);
     if (typeof s.tools === 'string' && s.tools.trim()) {
       top.push('--tools', s.tools.trim());
     }
@@ -155,9 +210,17 @@ export class AcpClient extends EventEmitter {
       top.push('-w');
     }
 
+    if (this.resumeSessionId) {
+      top.push('-r', this.resumeSessionId);
+      if (this.fork) top.push('--fork-session');
+    }
+
     const alwaysApprove = s.alwaysApprove === false ? false : true;
     const agentFlags: string[] = ['agent', '--no-leader'];
     if (alwaysApprove) agentFlags.push('--always-approve');
+    else if (s.permissionMode === 'auto' || s.autoMode === true) {
+      top.push('--permission-mode', 'auto');
+    }
     agentFlags.push('stdio');
 
     return [...top, ...agentFlags];
@@ -168,10 +231,118 @@ export class AcpClient extends EventEmitter {
     this.emit('status', { status: s, ...(extra || {}) });
   }
 
+  private _wireLines(input: NodeJS.ReadableStream): void {
+    const rl = createInterface({ input });
+    rl.on('line', (line: string) => { void this._onLine(line); });
+  }
+
+  private attachSocket(sockPath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const sock = net.createConnection(sockPath);
+      let settled = false;
+      const fail = (err: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(t);
+        try { sock.destroy(); } catch { /* ignore */ }
+        reject(err);
+      };
+      const t = setTimeout(() => fail(new Error('hold socket connect timeout')), 8000);
+      sock.once('connect', () => {
+        // Old hold rejected a second client by ending immediately after accept.
+        const settle = setTimeout(() => {
+          if (settled) return;
+          if (sock.destroyed || sock.readableEnded || !sock.writable) {
+            fail(new Error('hold rejected socket'));
+            return;
+          }
+          settled = true;
+          clearTimeout(t);
+          this.sock = sock;
+          this.held = true;
+          this._wireLines(sock);
+          sock.on('close', () => {
+            if (this.sock === sock) this.sock = null;
+            if (this._closing) return;
+            this.setStatus('disconnected');
+            this.emit('exit', { code: null, signal: null, at: Date.now() });
+          });
+          sock.on('error', (err) => this.emit('stderr', String(err.message || err)));
+          resolve();
+        }, 40);
+        sock.once('close', () => {
+          if (!settled) {
+            clearTimeout(settle);
+            fail(new Error('hold rejected socket'));
+          }
+        });
+      });
+      sock.once('error', (err) => {
+        fail(err instanceof Error ? err : new Error(String(err)));
+      });
+    });
+  }
+
+  private async attachSocketRetry(sockPath: string, tries = 20): Promise<void> {
+    let last: unknown = null;
+    for (let i = 0; i < tries; i++) {
+      try {
+        await this.attachSocket(sockPath);
+        return;
+      } catch (err) {
+        last = err;
+        await new Promise((r) => setTimeout(r, Math.min(500, 80 + i * 80)));
+      }
+    }
+    throw last instanceof Error ? last : new Error('hold socket connect failed');
+  }
+
   async start({ resumeSessionId = null }: { resumeSessionId?: string | null } = {}): Promise<void> {
     const argv = this._buildArgv();
+    if (this.agentId && holdEnabled()) {
+      try {
+        const hold = await ensureHold({ agentId: this.agentId, cwd: this.cwd, argv });
+        await this.attachSocketRetry(hold.sock);
+        const ready = readHoldReady(this.agentId);
+        const skipHandshake = !holdNeedsHandshake(hold.created, ready?.sessionId || null);
+        if (skipHandshake) {
+          this.sessionId = resumeSessionId || this.resumeSessionId || ready?.sessionId || null;
+          this.setStatus('idle');
+          this.emit('session_ready', { sessionId: this.sessionId, resumed: true, attached: true });
+          this.emit('stderr', `[hold] attached session=${this.sessionId} created=${hold.created}\n`);
+          return;
+        }
+        try {
+          await this._handshake(resumeSessionId);
+          if (this.sessionId) markHoldReady(this.agentId, this.sessionId);
+          this.setStatus('idle');
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const shutdown = !!(this.exitInfo && (this.exitInfo.code === 143 || this.exitInfo.signal === 'SIGTERM' || /agent exited/i.test(msg)));
+          if (shutdown) {
+            this.setStatus('exited', this.exitInfo || { code: 143 });
+            return;
+          }
+          this.lastError = msg;
+          this.setStatus('errored', { error: msg });
+          this.emit('error', err);
+        }
+        return;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (this.agentId && holdRunning(this.agentId)) {
+          this.lastError = msg;
+          this.setStatus('errored', { error: msg });
+          this.emit('error', err);
+          this.emit('stderr', '[hold] attach failed, not spawning a second grok: ' + msg + '\n');
+          return;
+        }
+        this.emit('stderr', '[hold] fallback to in-process: ' + msg + '\n');
+      }
+    }
+
     this.proc = spawn(
-      GROK_BIN,
+      resolveGrokBin(this.env),
       argv,
       { cwd: this.cwd, env: this.env, stdio: ['pipe', 'pipe', 'pipe'] },
     );
@@ -198,14 +369,18 @@ export class AcpClient extends EventEmitter {
     });
 
     if (!this.proc.stdout) throw new Error('grok stdio process has no stdout');
-    const rl = createInterface({ input: this.proc.stdout });
-    rl.on('line', (line: string) => { void this._onLine(line); });
+    this._wireLines(this.proc.stdout);
 
     try {
       await this._handshake(resumeSessionId);
       this.setStatus('idle');
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      const shutdown = !!(this.exitInfo && (this.exitInfo.code === 143 || this.exitInfo.signal === 'SIGTERM' || /agent exited/i.test(msg)));
+      if (shutdown) {
+        this.setStatus('exited', this.exitInfo || { code: 143 });
+        return;
+      }
       this.lastError = msg;
       this.setStatus('errored', { error: msg });
       this.emit('error', err);
@@ -228,6 +403,8 @@ export class AcpClient extends EventEmitter {
 
     const canLoad = !!init?.agentCapabilities?.loadSession;
     let loaded = false;
+    // --resume --fork-session already cloned history into a new session.
+    if (this.fork) resumeSessionId = null;
     if (resumeSessionId && canLoad) {
       try {
         await this.request('session/load', {
@@ -254,12 +431,25 @@ export class AcpClient extends EventEmitter {
     }
   }
 
+  private _trySend(msg: JsonRpcRequest | JsonRpcNotification | JsonRpcResponse): boolean {
+    if (!acpCanSend(this.sock, this.proc)) return false;
+    try {
+      this.emit('rpc_send', msg);
+      const line = JSON.stringify(msg) + '\n';
+      if (this.sock && !this.sock.destroyed) {
+        this.sock.write(line);
+        return true;
+      }
+      if (this.proc?.stdin?.writable) {
+        this.proc.stdin.write(line);
+        return true;
+      }
+    } catch { /* closed between check and write */ }
+    return false;
+  }
+
   private _send(msg: JsonRpcRequest | JsonRpcNotification | JsonRpcResponse): void {
-    if (!this.proc || !this.proc.stdin?.writable) {
-      throw new Error('agent stdin not writable');
-    }
-    this.emit('rpc_send', msg);
-    this.proc.stdin.write(JSON.stringify(msg) + '\n');
+    if (!this._trySend(msg)) throw new Error('agent stdin not writable');
   }
 
   request(method: string, params?: unknown): Promise<unknown> {
@@ -318,13 +508,17 @@ export class AcpClient extends EventEmitter {
       this.emit('request', msg);
       try {
         const result = await this._dispatch(anyMsg.method, anyMsg.params);
-        this._send({ jsonrpc: '2.0', id: anyMsg.id, result });
+        if (!this._trySend({ jsonrpc: '2.0', id: anyMsg.id, result })) {
+          this.emit('stderr', `drop reply ${anyMsg.method}: agent stdin not writable\n`);
+        }
       } catch (err) {
         const e = err as { rpc?: { code: number; message: string }; message?: string };
         const rpc = e?.rpc && typeof e.rpc === 'object'
           ? e.rpc
           : { code: -32603, message: e?.message || 'internal error' };
-        this._send({ jsonrpc: '2.0', id: anyMsg.id, error: rpc });
+        if (!this._trySend({ jsonrpc: '2.0', id: anyMsg.id, error: rpc })) {
+          this.emit('stderr', `drop error reply ${anyMsg.method}: agent stdin not writable\n`);
+        }
       }
       return;
     }
@@ -333,8 +527,40 @@ export class AcpClient extends EventEmitter {
       this.emit('notification', msg);
       if (anyMsg.method === 'session/update') {
         this.emit('update', anyMsg.params);
+        const upd = anyMsg.params && typeof anyMsg.params === 'object'
+          ? (anyMsg.params as { update?: Record<string, unknown> }).update
+          : undefined;
+        const su = upd && typeof upd['sessionUpdate'] === 'string' ? String(upd['sessionUpdate']) : '';
+        if (su === 'model_changed' || su === 'ModelChanged' || su === 'current_model_update') {
+          const next = upd && (upd['new_model'] || upd['modelId'] || upd['currentModelId']);
+          const winRaw = upd && (upd['context_window'] || upd['contextWindow']);
+          const contextWindow = typeof winRaw === 'number' && winRaw > 0 ? winRaw : undefined;
+          if (typeof next === 'string' && next.trim()) {
+            const id = next.trim();
+            const changed = this.modelId !== id || contextWindow != null;
+            this.modelId = id;
+            if (changed) this.emit('model', { modelId: id, contextWindow });
+          }
+        }
+        const chunkMeta = upd && typeof upd['_meta'] === 'object' && upd['_meta']
+          ? upd['_meta'] as { modelId?: unknown }
+          : null;
+        if (chunkMeta && typeof chunkMeta.modelId === 'string' && chunkMeta.modelId.trim()) {
+          const next = chunkMeta.modelId.trim();
+          if (this.modelId !== next) {
+            this.modelId = next;
+            this.emit('model', { modelId: next });
+          }
+        }
+        if ((this.status === 'idle' || this.status === 'starting') && isLiveWorkUpdate(su)) {
+          this.setStatus('running');
+        }
       } else if (anyMsg.method === '_x.ai/session/prompt_complete') {
-        this.emit('prompt_complete', anyMsg.params);
+        this.promptDepth = Math.max(0, (this.promptDepth || 1) - 1);
+        if (this.promptDepth === 0) {
+          if (this.status === 'running' || this.status === 'starting') this.setStatus('idle');
+          this.emit('prompt_complete', anyMsg.params);
+        }
       } else if (anyMsg.method.startsWith('_x.ai/')) {
         this.emit('x_notification', msg);
       }
@@ -352,12 +578,44 @@ export class AcpClient extends EventEmitter {
       case 'fs/write_text_file':     return this.fsHost.writeTextFile(params as never);
       case 'session/request_permission':
         return this.permissionHost.requestPermission(params);
+      case '_x.ai/exit_plan_mode':
+      case 'x.ai/exit_plan_mode':
+        return this.interactionHost.request('exit_plan_mode', params);
+      case '_x.ai/ask_user_question':
+      case 'x.ai/ask_user_question':
+        return this.interactionHost.request('ask_user_question', params);
       default: {
         const err = new Error(`Method not found: ${method}`) as Error & { rpc?: { code: number; message: string } };
         err.rpc = { code: -32601, message: `Method not found: ${method}` };
         throw err;
       }
     }
+  }
+
+  /** Wait until nested session/prompt (compact fallback) finishes. */
+  async waitForIdleTurn(timeoutMs = 180_000): Promise<void> {
+    if ((this.promptDepth || 0) <= 0 && this.status !== 'running') return;
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (err?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.off('prompt_complete', onComplete);
+        this.off('status', onStatus);
+        if (err) reject(err);
+        else resolve();
+      };
+      const onComplete = () => finish();
+      const onStatus = (info: { status?: string } | string) => {
+        const s = typeof info === 'string' ? info : info && info.status;
+        if (s === 'idle' || s === 'exited' || s === 'errored' || s === 'disconnected') finish();
+      };
+      const timer = setTimeout(() => finish(new Error('turn did not finish')), timeoutMs);
+      this.once('prompt_complete', onComplete);
+      this.on('status', onStatus);
+      if ((this.promptDepth || 0) <= 0 && this.status !== 'running') finish();
+    });
   }
 
   async prompt(textOrBlocks: string | unknown[]): Promise<unknown> {
@@ -368,42 +626,89 @@ export class AcpClient extends EventEmitter {
     } else {
       prompt = [{ type: 'text', text: String(textOrBlocks) }];
     }
+    this.promptDepth += 1;
     this.setStatus('running');
     try {
       const result = await this.request('session/prompt', {
         sessionId: this.sessionId,
         prompt,
       });
-      this.setStatus('idle');
+      // session/prompt can resolve before the turn is done. Idle only
+      // on prompt_complete so a refresh mid-turn still reports Running.
       this.emit('prompt_result', result);
       return result;
     } catch (err) {
+      this.promptDepth = Math.max(0, this.promptDepth - 1);
       const msg = err instanceof Error ? err.message : String(err);
-      this.setStatus('errored', { error: msg });
+      if (this.promptDepth === 0) this.setStatus('errored', { error: msg });
       throw err;
     }
   }
 
+  async setModel(opts: { modelId?: string; reasoningEffort?: string }): Promise<unknown> {
+    if (!this.sessionId) throw new Error('session not ready');
+    const modelId = String(opts.modelId || this.modelId || '').trim();
+    const params = buildSetModelParams(this.sessionId, {
+      modelId,
+      reasoningEffort: opts.reasoningEffort,
+    });
+    if (!params.modelId) throw new Error('session/set_model needs a model id');
+    const tries = ['session/set_model', 'session/setModel'];
+    let last: unknown = null;
+    for (const method of tries) {
+      try {
+        const result = await this.request(method, params);
+        this.modelId = modelId;
+        this.emit('model', { modelId });
+        return result;
+      } catch (err) {
+        last = err;
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/not found|unknown method|method not found/i.test(msg)) throw err;
+      }
+    }
+    throw last instanceof Error ? last : new Error('session/set_model failed');
+  }
+
   async cancel(): Promise<{ cancelled: boolean; reason?: string; result?: unknown; fallback?: string; error?: string }> {
     if (!this.sessionId) return { cancelled: false, reason: 'no session' };
+    const sid = this.sessionId;
+    const rpc = this.request('session/cancel', { sessionId: sid });
+    const timeout = new Promise<never>((_resolve, reject) => {
+      setTimeout(() => reject(new Error('cancel timeout')), 2000);
+    });
     try {
-      const result = await this.request('session/cancel', { sessionId: this.sessionId });
+      const result = await Promise.race([rpc, timeout]);
+      this.promptDepth = 0;
+      if (this.status === 'running' || this.status === 'starting') this.setStatus('idle');
       return { cancelled: true, result };
     } catch (err) {
-      try {
-        this.notify('session/cancel', { sessionId: this.sessionId });
-      } catch { /* ignore */ }
+      try { this.notify('session/cancel', { sessionId: sid }); } catch { /* ignore */ }
+      this.promptDepth = 0;
+      if (this.status === 'running' || this.status === 'starting') this.setStatus('idle');
       const msg = err instanceof Error ? err.message : String(err);
       return { cancelled: true, fallback: 'notification', error: msg };
     }
   }
 
-  async shutdown(signal: NodeJS.Signals = 'SIGTERM'): Promise<void> {
+  async shutdown(signal: NodeJS.Signals | { destroyHold?: boolean; signal?: NodeJS.Signals } = 'SIGTERM'): Promise<void> {
     if (this._closing) return;
     this._closing = true;
     this.terminalHost.shutdownAll();
+    // String form is "detach". Only { destroyHold: true } may stop a hold
+    // (delete conversation). Disconnect / archive / process restart must not.
+    const opts = typeof signal === 'string' ? { destroyHold: false, signal } : (signal || {});
+    const destroyHold = opts.destroyHold === true;
+    if (this.sock) {
+      try { this.sock.destroy(); } catch { /* ignore */ }
+      this.sock = null;
+    }
+    if (this.held && this.agentId && destroyHold) {
+      try { stopHold(this.agentId); } catch { /* ignore */ }
+    }
     if (this.proc && !this.proc.killed) {
-      try { this.proc.kill(signal); } catch { /* ignore */ }
+      const sig = opts.signal || 'SIGTERM';
+      try { this.proc.kill(sig); } catch { /* ignore */ }
       const proc = this.proc;
       const timer = setTimeout(() => {
         if (proc.exitCode == null && !proc.killed) {

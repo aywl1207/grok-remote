@@ -27,11 +27,11 @@ export function mount(container: HTMLElement): void {
       </header>
 
       <div class="models-list" data-role="list">
-        <p class="models-status">loading...</p>
+        <p class="models-status">Loading…</p>
       </div>
 
       <details class="models-raw">
-        <summary>raw output</summary>
+        <summary>Raw output</summary>
         <pre class="models-raw-body" data-role="raw"></pre>
       </details>
 
@@ -77,7 +77,7 @@ function renderList(root: HTMLElement, data: ModelsResponse): void {
   if (!items.length) {
     const p = document.createElement('p');
     p.className = 'models-status';
-    p.textContent = 'no models parsed. check the raw output below.';
+    p.textContent = 'No models parsed. Check the raw output below.';
     list.appendChild(p);
     return;
   }

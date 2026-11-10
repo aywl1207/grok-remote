@@ -43,7 +43,7 @@ export function mountTraceTab(container: HTMLElement, agent: TraceAgent | null |
   if (!container) return;
 
   if (!agent || !agent.id) {
-    container.replaceChildren(el('div', { class: 'pane-empty' }, 'no agent selected'));
+    container.replaceChildren(el('div', { class: 'pane-empty' }, 'No agent selected'));
     return;
   }
 
@@ -72,16 +72,16 @@ async function fetchAndRender(state: TraceState): Promise<void> {
 
 function buildLoading(): HTMLElement {
   return el('div', { class: 'trace trace--loading' },
-    el('div', { class: 'trace-spinner' }, 'fetching trace from grok...'),
+    el('div', { class: 'trace-spinner' }, 'Fetching trace from Grok…'),
     el('div', { class: 'trace-loading-sub' }, 'we run `grok trace <sessionId> --local`, extract the tar.gz, and parse every file in it. takes a few seconds.'),
   ) as HTMLElement;
 }
 
 function buildError(msg: string): HTMLElement {
   return el('div', { class: 'trace trace--err' },
-    el('div', { class: 'trace-err-title' }, 'trace failed'),
+    el('div', { class: 'trace-err-title' }, 'Trace failed'),
     el('pre', { class: 'trace-err-body' }, msg),
-    el('div', { class: 'trace-err-hint' }, 'common causes: the agent has not completed its handshake yet (no sessionId), or the grok binary is not on PATH.'),
+    el('div', { class: 'trace-err-hint' }, 'Common causes: the agent has not completed its handshake yet (no sessionId), or the grok binary is not on PATH.'),
   ) as HTMLElement;
 }
 
@@ -103,7 +103,7 @@ function renderTrace(d: TraceData): HTMLElement {
 function renderHeader(d: TraceData): HTMLElement {
   return el('header', { class: 'trace-head' },
     el('div', null,
-      el('h2', { class: 'trace-h2' }, 'session trace'),
+      el('h2', { class: 'trace-h2' }, 'Session trace'),
       el('div', { class: 'trace-sub' },
         el('span', null, 'session '),
         el('code', null, d.sessionId || '·'),
@@ -116,7 +116,7 @@ function renderHeader(d: TraceData): HTMLElement {
     el('button', {
       class: 'btn btn--ghost trace-refresh',
       type: 'button',
-      title: 'fetch the latest export',
+      title: 'Fetch the latest export',
       onclick: () => {
         if (!activeState) return;
         activeState.container.replaceChildren(buildLoading());
@@ -127,7 +127,7 @@ function renderHeader(d: TraceData): HTMLElement {
           }
         });
       },
-    }, 'refresh'),
+    }, 'Refresh'),
   ) as HTMLElement;
 }
 
@@ -135,20 +135,20 @@ function renderSummaryCard(d: TraceData): HTMLElement {
   const s = (d.summary || {}) as Record<string, unknown>;
   const info = (s['info'] as Record<string, unknown>) || {};
   const pairs: [string, string][] = [
-    ['session id',     String(info['id'] || d.sessionId || '·')],
+    ['Session ID',     String(info['id'] || d.sessionId || '·')],
     ['model',          String(s['current_model_id'] || '·')],
     ['cwd',            String(info['cwd'] || '·')],
     ['created',        fmtTime(s['created_at'] as string | undefined)],
     ['updated',        fmtTime(s['updated_at'] as string | undefined)],
-    ['last active',    fmtTime(s['last_active_at'] as string | undefined)],
+    ['Last active',    fmtTime(s['last_active_at'] as string | undefined)],
     ['messages',       String(s['num_messages'] ?? '·')],
-    ['chat messages',  String(s['num_chat_messages'] ?? '·')],
+    ['Chat messages',  String(s['num_chat_messages'] ?? '·')],
     ['next trace turn',String(s['next_trace_turn'] ?? '·')],
     ['format version', String(s['chat_format_version'] ?? '·')],
     ['git branch',     String(s['head_branch'] || '·')],
     ['head commit',    s['head_commit'] ? String(s['head_commit']).slice(0, 12) : '·'],
     ['git root',       String(s['git_root_dir'] || '·')],
-    ['git remotes',    (Array.isArray(s['git_remotes']) ? (s['git_remotes'] as unknown[]).join(', ') : '') || '·'],
+    ['Git remotes',    (Array.isArray(s['git_remotes']) ? (s['git_remotes'] as unknown[]).join(', ') : '') || '·'],
     ['grok home',      String(s['grok_home'] || '·')],
   ];
   return el('section', { class: 'trace-section' },
@@ -160,7 +160,7 @@ function renderSummaryCard(d: TraceData): HTMLElement {
       ]),
     ),
     s['session_summary'] ? el('div', { class: 'trace-summary-text' },
-      el('div', { class: 'trace-section-sub' }, 'session summary text'),
+      el('div', { class: 'trace-section-sub' }, 'Session summary text'),
       el('div', null, String(s['session_summary'])),
     ) : null,
   ) as HTMLElement;
@@ -170,15 +170,15 @@ function renderTimeline(d: TraceData): HTMLElement {
   const rows = Array.isArray(d.updates) ? d.updates as UpdateRow[] : [];
   if (!rows.length) {
     return el('section', { class: 'trace-section' },
-      el('h3', { class: 'trace-section-title' }, 'rpc timeline'),
-      el('div', { class: 'trace-section-empty' }, 'no updates recorded for this session.'),
+      el('h3', { class: 'trace-section-title' }, 'RPC timeline'),
+      el('div', { class: 'trace-section-empty' }, 'No updates recorded for this session.'),
     ) as HTMLElement;
   }
   const ts = rows.map((r) => parseTs(r.timestamp)).filter((n) => Number.isFinite(n));
   if (!ts.length) {
     return el('section', { class: 'trace-section' },
-      el('h3', { class: 'trace-section-title' }, 'rpc timeline'),
-      el('div', { class: 'trace-section-empty' }, 'no parseable timestamps in updates.jsonl.'),
+      el('h3', { class: 'trace-section-title' }, 'RPC timeline'),
+      el('div', { class: 'trace-section-empty' }, 'No parseable timestamps in updates.jsonl.'),
     ) as HTMLElement;
   }
   const t0 = Math.min(...ts);
@@ -225,7 +225,7 @@ function renderTimeline(d: TraceData): HTMLElement {
   );
 
   return el('section', { class: 'trace-section' },
-    el('h3', { class: 'trace-section-title' }, `rpc timeline (${rows.length} updates)`),
+    el('h3', { class: 'trace-section-title' }, `RPC timeline (${rows.length} updates)`),
     lane,
     axis,
     legend,
@@ -241,14 +241,14 @@ function renderMethodDistribution(d: TraceData): HTMLElement {
   }
   if (!counts.size) {
     return el('section', { class: 'trace-section' },
-      el('h3', { class: 'trace-section-title' }, 'method distribution'),
-      el('div', { class: 'trace-section-empty' }, 'no methods to summarize.'),
+      el('h3', { class: 'trace-section-title' }, 'Method distribution'),
+      el('div', { class: 'trace-section-empty' }, 'No methods to summarize.'),
     ) as HTMLElement;
   }
   const max = Math.max(...counts.values());
   const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   return el('section', { class: 'trace-section' },
-    el('h3', { class: 'trace-section-title' }, 'method distribution'),
+    el('h3', { class: 'trace-section-title' }, 'Method distribution'),
     el('div', { class: 'trace-bars' },
       ...sorted.map(([m, n]) =>
         el('div', { class: 'trace-bar-row' },
@@ -298,8 +298,8 @@ function renderToolLatency(d: TraceData): HTMLElement {
   }
   if (!samples.length) {
     return el('section', { class: 'trace-section' },
-      el('h3', { class: 'trace-section-title' }, 'tool call latency'),
-      el('div', { class: 'trace-section-empty' }, 'no completed tool calls in this trace.'),
+      el('h3', { class: 'trace-section-title' }, 'Tool-call latency'),
+      el('div', { class: 'trace-section-empty' }, 'No completed tool calls in this trace.'),
     ) as HTMLElement;
   }
   const groups = new Map<string, ToolGroup>();
@@ -323,7 +323,7 @@ function renderToolLatency(d: TraceData): HTMLElement {
 
   const fmtMs = (ms: number): string => ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
   return el('section', { class: 'trace-section' },
-    el('h3', { class: 'trace-section-title' }, `tool call latency (${samples.length} calls)`),
+    el('h3', { class: 'trace-section-title' }, `Tool-call latency (${samples.length} calls)`),
     el('div', { class: 'trace-tool-table' },
       el('div', { class: 'trace-tool-row trace-tool-row--head' },
         el('span', { class: 'trace-tool-c trace-tool-c--name' }, 'tool'),
@@ -331,7 +331,7 @@ function renderToolLatency(d: TraceData): HTMLElement {
         el('span', { class: 'trace-tool-c trace-tool-c--num' }, 'p50'),
         el('span', { class: 'trace-tool-c trace-tool-c--num' }, 'p95'),
         el('span', { class: 'trace-tool-c trace-tool-c--num' }, 'max'),
-        el('span', { class: 'trace-tool-c trace-tool-c--bar' }, 'total time'),
+        el('span', { class: 'trace-tool-c trace-tool-c--bar' }, 'Total time'),
       ),
       ...list.map((g) => el('div', { class: 'trace-tool-row' },
         el('span', { class: 'trace-tool-c trace-tool-c--name', title: g.title }, g.title),
@@ -355,8 +355,8 @@ interface Turn { startTs: number; count: number; lastTs?: number }
 function renderTurnBreakdown(d: TraceData): HTMLElement {
   const rows = Array.isArray(d.updates) ? d.updates as UpdateRow[] : [];
   if (!rows.length) return el('section', { class: 'trace-section' },
-    el('h3', { class: 'trace-section-title' }, 'tool calls per turn'),
-    el('div', { class: 'trace-section-empty' }, 'no updates to analyse.'),
+    el('h3', { class: 'trace-section-title' }, 'Tool calls per turn'),
+    el('div', { class: 'trace-section-empty' }, 'No updates to analyse.'),
   ) as HTMLElement;
 
   const starts: number[] = [];
@@ -375,8 +375,8 @@ function renderTurnBreakdown(d: TraceData): HTMLElement {
     if (sub === 'tool_call' || sub === 'tool_call_start') starts.push(t);
   }
   if (!starts.length) return el('section', { class: 'trace-section' },
-    el('h3', { class: 'trace-section-title' }, 'tool calls per turn'),
-    el('div', { class: 'trace-section-empty' }, 'no tool calls in this trace.'),
+    el('h3', { class: 'trace-section-title' }, 'Tool calls per turn'),
+    el('div', { class: 'trace-section-empty' }, 'No tool calls in this trace.'),
   ) as HTMLElement;
   starts.sort((a, b) => a - b);
 
@@ -424,7 +424,7 @@ function renderTurnBreakdown(d: TraceData): HTMLElement {
     : `${turns.length} turn${turns.length === 1 ? '' : 's'} (>${GAP_MS / 1000}s idle gap heuristic)`;
 
   return el('section', { class: 'trace-section' },
-    el('h3', { class: 'trace-section-title' }, `tool calls per turn — ${subtitle}, avg ${avg}/turn`),
+    el('h3', { class: 'trace-section-title' }, `Tool calls per turn — ${subtitle}, avg ${avg}/turn`),
     el('div', { class: 'trace-turn-bars' },
       ...turns.map((t, i) => el('div', {
         class: 'trace-turn-bar',
@@ -454,10 +454,10 @@ function renderTokenChart(d: TraceData): HTMLElement {
   }
   if (!points.length) {
     return el('section', { class: 'trace-section' },
-      el('h3', { class: 'trace-section-title' }, 'context-window growth'),
+      el('h3', { class: 'trace-section-title' }, 'Context-window growth'),
       el('div', { class: 'trace-section-empty' },
-        'this trace did not record any totalTokens fields. ',
-        'grok archives totalTokens on session/update events; if the agent ',
+        'This trace did not record any totalTokens fields. ',
+        'Grok archives totalTokens on session/update events; if the agent ',
         'never emitted one, there is nothing to chart.'),
     ) as HTMLElement;
   }
@@ -488,25 +488,25 @@ function renderTokenChart(d: TraceData): HTMLElement {
 
   const stats = el('div', { class: 'trace-token-stats' },
     el('div', null,
-      el('span', { class: 'trace-token-stat-k' }, 'peak '),
+      el('span', { class: 'trace-token-stat-k' }, 'Peak '),
       el('span', { class: 'trace-token-stat-v' }, String(peakT.toLocaleString())),
     ),
     el('div', null,
-      el('span', { class: 'trace-token-stat-k' }, 'final '),
+      el('span', { class: 'trace-token-stat-k' }, 'Final '),
       el('span', { class: 'trace-token-stat-v' }, String(finalT.toLocaleString())),
     ),
     el('div', null,
-      el('span', { class: 'trace-token-stat-k' }, 'min '),
+      el('span', { class: 'trace-token-stat-k' }, 'Min '),
       el('span', { class: 'trace-token-stat-v' }, String(minT.toLocaleString())),
     ),
     el('div', null,
-      el('span', { class: 'trace-token-stat-k' }, 'samples '),
+      el('span', { class: 'trace-token-stat-k' }, 'Samples '),
       el('span', { class: 'trace-token-stat-v' }, String(points.length.toLocaleString())),
     ),
   );
 
   return el('section', { class: 'trace-section' },
-    el('h3', { class: 'trace-section-title' }, 'context-window growth (cumulative tokens)'),
+    el('h3', { class: 'trace-section-title' }, 'Context-window growth (cumulative tokens)'),
     spark,
     el('div', { class: 'trace-axis' },
       el('span', null, fmtTime(new Date(t0).toISOString())),
@@ -515,8 +515,8 @@ function renderTokenChart(d: TraceData): HTMLElement {
     ),
     stats,
     el('div', { class: 'trace-section-sub' },
-      'shows totalTokens carried on each session/update event. ',
-      'the trace export does not include the per-turn input/output split.'),
+      'Shows totalTokens carried on each session/update event. ',
+      'The trace export does not include the per-turn input/output split.'),
   ) as HTMLElement;
 }
 
@@ -524,12 +524,12 @@ function renderChatHistory(d: TraceData): HTMLElement {
   const rows = Array.isArray(d.chatHistory) ? d.chatHistory : [];
   if (!rows.length) {
     return el('section', { class: 'trace-section' },
-      el('h3', { class: 'trace-section-title' }, 'chat history'),
-      el('div', { class: 'trace-section-empty' }, 'no chat history rows.'),
+      el('h3', { class: 'trace-section-title' }, 'Chat history'),
+      el('div', { class: 'trace-section-empty' }, 'No chat history rows.'),
     ) as HTMLElement;
   }
   return el('section', { class: 'trace-section' },
-    el('h3', { class: 'trace-section-title' }, `chat history (${rows.length})`),
+    el('h3', { class: 'trace-section-title' }, `Chat history (${rows.length})`),
     el('div', { class: 'trace-chat' },
       ...rows.map((m, idx) => renderChatRow(m, idx)),
     ),
@@ -574,9 +574,9 @@ function renderChatRow(m: unknown, idx: number): HTMLElement {
 function renderSystemPrompt(d: TraceData): HTMLElement {
   const text = d.systemPrompt || '';
   return el('section', { class: 'trace-section' },
-    el('h3', { class: 'trace-section-title' }, `system prompt (${fmtBytes(text.length)})`),
+    el('h3', { class: 'trace-section-title' }, `System prompt (${fmtBytes(text.length)})`),
     el('details', { class: 'trace-sys' },
-      el('summary', null, text.length ? 'show / hide' : '(empty)'),
+      el('summary', null, text.length ? 'Show / hide' : '(empty)'),
       el('pre', { class: 'trace-sys-body' }, text),
     ),
   ) as HTMLElement;
@@ -593,7 +593,7 @@ function renderRawFiles(d: TraceData): HTMLElement {
     ['export_metadata.json',d.exportMetadata, false],
   ];
   return el('section', { class: 'trace-section' },
-    el('h3', { class: 'trace-section-title' }, 'raw archive files'),
+    el('h3', { class: 'trace-section-title' }, 'Raw archive files'),
     el('div', { class: 'trace-section-sub' },
       'parsed in-memory; every tab open re-runs `grok trace --local` and re-parses.'),
     ...items.map(([name, value]) => renderRawBlock(name, value, d.memberSizes)),
@@ -606,15 +606,15 @@ function renderRawBlock(name: string, value: unknown, sizes: Record<string, numb
   const dl = el('button', {
     class: 'trace-copy',
     type: 'button',
-    title: 'copy parsed JSON to clipboard',
+    title: 'Copy parsed JSON to clipboard',
     onclick: async () => {
       try {
         await navigator.clipboard.writeText(JSON.stringify(value, null, 2));
-        dl.textContent = 'copied';
-        setTimeout(() => { dl.textContent = 'copy'; }, 1500);
+        dl.textContent = 'Copied';
+        setTimeout(() => { dl.textContent = 'Copy'; }, 1500);
       } catch { /* ignore */ }
     },
-  }, 'copy') as HTMLButtonElement;
+  }, 'Copy') as HTMLButtonElement;
   return el('details', { class: 'trace-raw' },
     el('summary', null,
       el('span', { class: 'trace-raw-name' }, name),

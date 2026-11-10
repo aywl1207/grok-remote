@@ -1,7 +1,7 @@
 {
   "name": "Grok Remote",
   "short_name": "GR",
-  "description": "Manage grok agents over your tailnet.",
+  "description": "Manage Grok agents from the browser.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#07090c",

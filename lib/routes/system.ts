@@ -14,6 +14,7 @@ import * as importRoutes     from './system/import.js';
 import * as setupRoutes      from './system/setup.js';
 import * as skillsRoutes     from './system/skills.js';
 import * as agentsRoutes     from './system/agents.js';
+import * as workflowsRoutes  from './system/workflows.js';
 
 export type RouteParams = Record<string, string>;
 export type RouteHandler = (
@@ -52,6 +53,7 @@ const REGISTRARS: RouteModule[] = [
   setupRoutes as RouteModule,
   skillsRoutes as RouteModule,
   agentsRoutes as RouteModule,
+  workflowsRoutes as RouteModule,
 ];
 for (const mod of REGISTRARS) {
   if (mod && typeof mod.register === 'function') mod.register(add);

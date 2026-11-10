@@ -57,7 +57,7 @@ export function unmount(): void {
 async function reload(section: HTMLElement): Promise<void> {
   const { inspect, error } = await loadInspect();
   if (aborted) return;
-  if (error) { setStatusLine(section, 'failed to load: ' + error); return; }
+  if (error) { setStatusLine(section, 'Failed to load: ' + error); return; }
   cachedInspect = inspect;
 
   const data = (inspect && typeof inspect === 'object') ? inspect as InspectShape : {};
@@ -66,8 +66,8 @@ async function reload(section: HTMLElement): Promise<void> {
   const projRoot = agents.find((a) => (a.source?.type === 'project' || a.source?.type === 'cwd' || a.source?.type === 'workspace') && a.source?.path)?.source?.path?.replace(/\/[^/]+\.md$/, '');
   const cwd = data.cwd;
   const banner: ConfigFile[] = [
-    { label: 'user agents', path: userRoot || '~/.grok/agents' },
-    ...(cwd ? [{ label: 'project agents', path: projRoot || `${cwd}/.grok/agents` }] : []),
+    { label: 'User agents', path: userRoot || '~/.grok/agents' },
+    ...(cwd ? [{ label: 'Project agents', path: projRoot || `${cwd}/.grok/agents` }] : []),
   ];
   addConfigFilesBanner(section, banner);
   clearBody(section);
@@ -76,13 +76,13 @@ async function reload(section: HTMLElement): Promise<void> {
   toolbar.style.display = 'flex';
   toolbar.style.gap = '8px';
   toolbar.style.alignItems = 'center';
-  toolbar.appendChild(mkPrimaryButton('+ new (user)', () => void createAgent('user', section)));
-  toolbar.appendChild(mkPrimaryButton('+ new (workspace)', () => void createAgent('workspace', section)));
-  toolbar.appendChild(mkSecondaryButton('refresh', () => void reload(section)));
+  toolbar.appendChild(mkPrimaryButton('+ New (User)', () => void createAgent('user', section)));
+  toolbar.appendChild(mkPrimaryButton('+ New (Workspace)', () => void createAgent('workspace', section)));
+  toolbar.appendChild(mkSecondaryButton('Refresh', () => void reload(section)));
   section.appendChild(toolbar);
 
   if (!agents.length) {
-    section.appendChild(emptyState({ message: 'no subagents discovered.' }));
+    section.appendChild(emptyState({ message: 'No subagents discovered.' }));
     return;
   }
 
@@ -110,7 +110,7 @@ async function reload(section: HTMLElement): Promise<void> {
   section.appendChild(buildFooterHint(
     'Built-in subagents ship with the grok binary and cannot be edited from ' +
     'the dashboard. User and workspace subagents are plain Markdown with YAML ' +
-    'frontmatter; the "+ new" buttons above scaffold a stub for you.',
+    'frontmatter; the "+ New" buttons above scaffold a stub for you.',
   ));
 }
 
@@ -125,7 +125,7 @@ function makeAgentCard(a: AgentRecord, section: HTMLElement): HTMLElement {
 
   const name = document.createElement('span');
   name.className = 'health-item-name';
-  name.textContent = a.name || '(unnamed)';
+  name.textContent = a.name || '(Unnamed)';
   left.appendChild(name);
 
   const srcType = (a.source && a.source.type) || '';
@@ -161,7 +161,7 @@ function makeAgentCard(a: AgentRecord, section: HTMLElement): HTMLElement {
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
   editBtn.className = 'health-item-toggle';
-  editBtn.textContent = editable ? 'edit' : 'view';
+  editBtn.textContent = editable ? 'Edit' : 'View';
   right.appendChild(editBtn);
 
   let delBtn: HTMLButtonElement | null = null;
@@ -169,15 +169,15 @@ function makeAgentCard(a: AgentRecord, section: HTMLElement): HTMLElement {
     delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = 'health-item-toggle';
-    delBtn.textContent = 'delete';
-    delBtn.title = 'delete this .md file';
+    delBtn.textContent = 'Delete';
+    delBtn.title = 'Delete this .md file';
     right.appendChild(delBtn);
   }
 
   const jsonBtn = document.createElement('button');
   jsonBtn.type = 'button';
   jsonBtn.className = 'health-item-toggle';
-  jsonBtn.textContent = 'show json';
+  jsonBtn.textContent = 'Show JSON';
   right.appendChild(jsonBtn);
   head.appendChild(right);
   card.appendChild(head);
@@ -194,8 +194,8 @@ function makeAgentCard(a: AgentRecord, section: HTMLElement): HTMLElement {
     const lbl = document.createElement('span');
     lbl.className = 'health-item-source-label';
     lbl.textContent = a.source?.plugin_name
-      ? `from plugin: ${a.source.plugin_name}`
-      : `defined in ${scopeLabel(srcType || 'user')}:`;
+      ? `From plugin: ${a.source.plugin_name}`
+      : `Defined in ${scopeLabel(srcType || 'user')}:`;
     src.appendChild(lbl);
     const code = document.createElement('code');
     code.className = 'health-path';
@@ -204,14 +204,14 @@ function makeAgentCard(a: AgentRecord, section: HTMLElement): HTMLElement {
     const copyBtn = document.createElement('button');
     copyBtn.type = 'button';
     copyBtn.className = 'health-copy-btn';
-    copyBtn.textContent = 'copy';
-    copyBtn.title = 'copy path to clipboard';
+    copyBtn.textContent = 'Copy';
+    copyBtn.title = 'Copy path to clipboard';
     copyBtn.addEventListener('click', async (ev: MouseEvent) => {
       ev.stopPropagation();
       try {
         await navigator.clipboard.writeText(fromPath);
-        copyBtn.textContent = 'copied';
-        setTimeout(() => { copyBtn.textContent = 'copy'; }, 1200);
+        copyBtn.textContent = 'Copied';
+        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1200);
       } catch { /* ignore */ }
     });
     src.appendChild(copyBtn);
@@ -219,7 +219,7 @@ function makeAgentCard(a: AgentRecord, section: HTMLElement): HTMLElement {
   } else if (srcType === 'builtin') {
     const note = document.createElement('div');
     note.className = 'health-item-source';
-    note.innerHTML = '<span class="health-item-source-label">source</span><span class="health-dim">built into grok (no file on disk)</span>';
+    note.innerHTML = '<span class="health-item-source-label">Source</span><span class="health-dim">Built into Grok (no file on disk)</span>';
     card.appendChild(note);
   }
 
@@ -237,26 +237,26 @@ function makeAgentCard(a: AgentRecord, section: HTMLElement): HTMLElement {
 
   jsonBtn.addEventListener('click', () => {
     const hidden = jsonPanel.classList.toggle('hidden');
-    jsonBtn.textContent = hidden ? 'show json' : 'hide json';
+    jsonBtn.textContent = hidden ? 'Show JSON' : 'Hide JSON';
   });
   editBtn.addEventListener('click', () => {
     if (!filePanel.classList.contains('hidden')) {
       filePanel.classList.add('hidden');
-      editBtn.textContent = editable ? 'edit' : 'view';
+      editBtn.textContent = editable ? 'Edit' : 'View';
       return;
     }
     void openFile(a, fromPath, filePanel, editBtn, editable, section);
   });
   if (delBtn) {
     delBtn.addEventListener('click', async () => {
-      if (!confirm(`delete ${a.name}? this removes ${shortenPath(fromPath)}`)) return;
+      if (!confirm(`Delete ${a.name}? This removes ${shortenPath(fromPath)}.`)) return;
       delBtn!.disabled = true;
       try {
         await api.systemAgents.deleteFile(fromPath);
         await reload(section);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        alert('delete failed: ' + msg);
+        alert('Delete failed: ' + msg);
         delBtn!.disabled = false;
       }
     });
@@ -274,14 +274,14 @@ async function openFile(
   section: HTMLElement,
 ): Promise<void> {
   panel.classList.remove('hidden');
-  editBtn.textContent = 'close';
+  editBtn.textContent = 'Close';
   panel.replaceChildren();
 
   if (!fromPath) {
     const note = document.createElement('div');
     note.style.color = 'var(--muted)';
     note.style.fontSize = '12px';
-    note.textContent = 'no file on disk; this subagent is built into grok.';
+    note.textContent = 'No file on disk; this subagent is built into Grok.';
     panel.appendChild(note);
     return;
   }
@@ -289,20 +289,20 @@ async function openFile(
   const loading = document.createElement('div');
   loading.style.color = 'var(--muted)';
   loading.style.fontSize = '12px';
-  loading.textContent = 'loading...';
+  loading.textContent = 'Loading…';
   panel.appendChild(loading);
 
   let content = '';
   try {
     const r = await api.systemAgents.read(fromPath) as { ok?: boolean; content?: string; error?: string };
     if (r && r.ok) content = r.content || '';
-    else throw new Error((r && r.error) || 'read failed');
+    else throw new Error((r && r.error) || 'Read failed');
   } catch (err) {
     panel.replaceChildren();
     const e = document.createElement('div');
     e.style.color = 'var(--red, #f87171)';
     e.style.fontSize = '12px';
-    e.textContent = 'read failed: ' + (err instanceof Error ? err.message : String(err));
+    e.textContent = 'Read failed: ' + (err instanceof Error ? err.message : String(err));
     panel.appendChild(e);
     return;
   }
@@ -346,24 +346,24 @@ async function openFile(
   const status = document.createElement('span');
   status.style.color = 'var(--muted)';
   status.style.fontSize = '11px';
-  const saveBtn = mkSecondaryButton('save', async () => {
+  const saveBtn = mkSecondaryButton('Save', async () => {
     saveBtn.disabled = true;
     cancelBtn.disabled = true;
-    status.textContent = 'saving...';
+    status.textContent = 'Saving…';
     try {
       await api.systemAgents.saveContent(fromPath, ta.value);
-      status.textContent = 'saved.';
+      status.textContent = 'Saved.';
       await reload(section);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      status.textContent = 'save failed: ' + msg;
+      status.textContent = 'Save failed: ' + msg;
       saveBtn.disabled = false;
       cancelBtn.disabled = false;
     }
   });
-  const cancelBtn = mkSecondaryButton('cancel', () => {
+  const cancelBtn = mkSecondaryButton('Cancel', () => {
     panel.classList.add('hidden');
-    editBtn.textContent = 'edit';
+    editBtn.textContent = 'Edit';
   });
   bar.appendChild(saveBtn);
   bar.appendChild(cancelBtn);
@@ -373,7 +373,7 @@ async function openFile(
 }
 
 async function createAgent(scope: string, section: HTMLElement): Promise<void> {
-  const raw = window.prompt(`new ${scope} subagent name (letters/digits/dash/underscore):`, '');
+  const raw = window.prompt(`New ${scope} subagent name (letters, digits, dash, underscore):`, '');
   if (!raw) return;
   const cleaned = raw.trim().replace(/\s+/g, '-');
   if (!cleaned) return;
@@ -383,11 +383,11 @@ async function createAgent(scope: string, section: HTMLElement): Promise<void> {
   }
   try {
     const r = await api.systemAgents.createFile(scope, cleaned + '.md') as { ok?: boolean; error?: string };
-    if (!r || !r.ok) throw new Error((r && r.error) || 'create failed');
+    if (!r || !r.ok) throw new Error((r && r.error) || 'Create failed');
     await reload(section);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    alert('create failed: ' + msg);
+    alert('Create failed: ' + msg);
   }
 }
 

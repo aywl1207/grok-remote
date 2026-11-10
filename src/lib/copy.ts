@@ -65,6 +65,7 @@ export interface ConvoAgent {
   model?: string | null;
   sessionId?: string | null;
   cwd?: string | null;
+  settings?: { reasoningEffort?: string | null; model?: string | null } | null;
 }
 
 export interface ConvoCtx {
@@ -93,13 +94,13 @@ function userText(turn: ConvoTurn | null | undefined): string {
 }
 
 function toolTitle(t: ConvoToolEntry | null | undefined): string {
-  if (!t || !t.card) return 'tool call';
+  if (!t || !t.card) return 'Tool call';
   const node = t.card.node;
   if (node && typeof node.querySelector === 'function') {
     const titleEl = node.querySelector('.tool-title');
-    if (titleEl) return (titleEl.textContent || 'tool call').trim();
+    if (titleEl) return (titleEl.textContent || 'Tool call').trim();
   }
-  return 'tool call';
+  return 'Tool call';
 }
 
 function toolRawInputJson(t: ConvoToolEntry | null | undefined): string {
@@ -132,7 +133,10 @@ export function serializeConversation(turns: ConvoTurn[] | null | undefined, ctx
   const captured = new Date().toISOString();
   const lines: string[] = [];
   lines.push(`# Conversation with ${agent.name || agent.id || 'agent'}`);
-  if (agent.model) lines.push(`# Model: ${agent.model}`);
+  const model = agent.model || (agent.settings && agent.settings.model) || '';
+  const effort = agent.settings && agent.settings.reasoningEffort;
+  if (model) lines.push(`# Model: ${model}`);
+  if (effort) lines.push(`# Effort: ${effort}`);
   if (agent.sessionId) lines.push(`# Session: ${agent.sessionId}`);
   lines.push(`# Captured: ${captured}`);
   lines.push('');
@@ -201,4 +205,21 @@ export function serializeResumeCommand(agent: ConvoAgent | null | undefined): st
     `  grok --resume ${sid}`,
   ];
   return lines.join('\n');
+}
+
+
+export function lastAssistantTexts(turns: ConvoTurn[] | null | undefined): string[] {
+  const out: string[] = [];
+  const list = Array.isArray(turns) ? turns : [];
+  for (let i = list.length - 1; i >= 0; i--) {
+    const text = bubbleText(list[i] && list[i]!.assistant).trim();
+    if (text) out.push(text);
+  }
+  return out;
+}
+
+/** 1 = newest reply. */
+export function nthLastAssistant(turns: ConvoTurn[] | null | undefined, n = 1): string {
+  const idx = Math.max(1, Math.floor(Number(n) || 1)) - 1;
+  return lastAssistantTexts(turns)[idx] || '';
 }

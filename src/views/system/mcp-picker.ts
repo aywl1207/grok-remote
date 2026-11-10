@@ -100,10 +100,10 @@ function writeFilters(key: string | undefined, f: PickerFilters): void {
 
 interface SortOption { value: SortMode; label: string; }
 const SORT_OPTIONS: SortOption[] = [
-  { value: 'name-asc', label: 'name (a-z)' },
-  { value: 'name-desc', label: 'name (z-a)' },
-  { value: 'category', label: 'category' },
-  { value: 'official', label: 'official first' },
+  { value: 'name-asc', label: 'Name (A–Z)' },
+  { value: 'name-desc', label: 'Name (Z–A)' },
+  { value: 'category', label: 'Category' },
+  { value: 'official', label: 'Official first' },
 ];
 
 interface PackageSourceMeta { value: PackageSource; label: string; }
@@ -122,9 +122,9 @@ const TRANSPORT_LABELS: Record<TransportKind, string> = {
 };
 
 const SERVER_KIND_LABELS: Record<ServerKind, string> = {
-  local: 'local',
-  'api-wrapper': 'api wrapper',
-  remote: 'remote',
+  local: 'Local',
+  'api-wrapper': 'API wrapper',
+  remote: 'Remote',
 };
 
 export interface McpPickerHandle {
@@ -414,13 +414,13 @@ export function openMcpPicker(opts: McpPickerOptions): McpPickerHandle {
   }
 
   function humanToggleLabel(value: string): string {
-    if (value === 'all') return 'all';
-    if (value === 'only') return 'only';
-    if (value === 'hide') return 'hide';
-    if (value === 'with') return 'with';
-    if (value === 'without') return 'no env';
-    if (value === 'remote') return 'remote';
-    if (value === 'stdio-only') return 'stdio';
+    if (value === 'all') return 'All';
+    if (value === 'only') return 'Only';
+    if (value === 'hide') return 'Hide';
+    if (value === 'with') return 'With';
+    if (value === 'without') return 'No env';
+    if (value === 'remote') return 'Remote';
+    if (value === 'stdio-only') return 'stdio only';
     return value;
   }
 
@@ -428,52 +428,52 @@ export function openMcpPicker(opts: McpPickerOptions): McpPickerHandle {
     const chips: Array<{ label: string; onRemove: () => void }> = [];
     if (filters.category) {
       chips.push({
-        label: `category: ${filters.category}`,
+        label: `Category: ${filters.category}`,
         onRemove: () => { filters.category = null; refreshAll(); },
       });
     }
     if (filters.transports.size) {
       const list = Array.from(filters.transports).join(', ');
       chips.push({
-        label: `transport: ${list}`,
+        label: `Transport: ${list}`,
         onRemove: () => { filters.transports.clear(); refreshAll(); },
       });
     }
     if (filters.packageSources.size) {
       const list = Array.from(filters.packageSources).join(', ');
       chips.push({
-        label: `package: ${list}`,
+        label: `Package: ${list}`,
         onRemove: () => { filters.packageSources.clear(); refreshAll(); },
       });
     }
     if (filters.kinds.size) {
       const list = Array.from(filters.kinds).map(k => SERVER_KIND_LABELS[k]).join(', ');
       chips.push({
-        label: `kind: ${list}`,
+        label: `Kind: ${list}`,
         onRemove: () => { filters.kinds.clear(); refreshAll(); },
       });
     }
     if (filters.officialMode !== 'all') {
       chips.push({
-        label: `official: ${filters.officialMode}`,
+        label: `Official: ${filters.officialMode}`,
         onRemove: () => { filters.officialMode = 'all'; refreshAll(); },
       });
     }
     if (filters.envMode !== 'all') {
       chips.push({
-        label: `env: ${filters.envMode}`,
+        label: `Env: ${filters.envMode}`,
         onRemove: () => { filters.envMode = 'all'; refreshAll(); },
       });
     }
     if (filters.remoteMode !== 'all') {
       chips.push({
-        label: `remote: ${filters.remoteMode}`,
+        label: `Remote: ${filters.remoteMode}`,
         onRemove: () => { filters.remoteMode = 'all'; refreshAll(); },
       });
     }
     if (filters.search.trim()) {
       chips.push({
-        label: `search: ${filters.search.trim()}`,
+        label: `Search: ${filters.search.trim()}`,
         onRemove: () => { filters.search = ''; pickerCtx?.setSearch(''); refreshAll(); },
       });
     }
@@ -502,7 +502,7 @@ export function openMcpPicker(opts: McpPickerOptions): McpPickerHandle {
     for (const o of SORT_OPTIONS) {
       const opt = document.createElement('option');
       opt.value = o.value;
-      opt.textContent = `sort: ${o.label}`;
+      opt.textContent = `Sort: ${o.label}`;
       if (filters.sort === o.value) opt.selected = true;
       sel.appendChild(opt);
     }
@@ -518,7 +518,7 @@ export function openMcpPicker(opts: McpPickerOptions): McpPickerHandle {
     wrap.className = 'registry-picker__empty';
     const p = document.createElement('p');
     p.style.margin = '0 0 8px';
-    p.textContent = 'no servers match those filters.';
+    p.textContent = 'No servers match those filters.';
     wrap.appendChild(p);
     const cta = document.createElement('button');
     cta.type = 'button';

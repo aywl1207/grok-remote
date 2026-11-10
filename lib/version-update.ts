@@ -128,6 +128,20 @@ export type LatestVersion =
     };
 
 export async function readLatestVersion(): Promise<LatestVersion> {
+  // Docker / copied-source installs have no .git. The in-app updater
+  // cannot pull origin/main; treat as current instead of failing the footer.
+  if (!fs.existsSync(path.join(ROOT, '.git'))) {
+    return {
+      ok: true,
+      ahead: 0,
+      behind: 0,
+      latestSha: null,
+      latestShaShort: null,
+      latestVersion: readPkgVersion(),
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
   const fetched = await runCapture('git', ['fetch', 'origin', 'main', '--quiet'], { timeoutMs: 20_000 });
   if (fetched.code !== 0) {
     return {

@@ -27,15 +27,15 @@ export function openImageLightbox(src: string, alt: string = ''): void {
   const closeBtn = el('button', {
     type: 'button',
     class: 'image-lightbox__close',
-    title: 'close',
-    'aria-label': 'close',
+    title: 'Close',
+    'aria-label': 'Close',
     onclick: closeImageLightbox,
   }, '×') as HTMLButtonElement;
 
   const overlay = el('div', {
     class: 'image-lightbox',
     role: 'dialog',
-    'aria-label': alt || 'image preview',
+    'aria-label': alt || 'Image preview',
     onclick: closeImageLightbox,
   }, img, closeBtn) as HTMLDivElement;
 

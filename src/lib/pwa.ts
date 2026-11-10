@@ -141,10 +141,20 @@ export function registerPwa(): void {
     const host = location.hostname;
     const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
     if (location.protocol === 'https:' || isLocal) {
+      let reloading = false;
+      const hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloading) return;
+        // First claim after register must not reload — that loops on iPad
+        // (skipWaiting + no-store sw.js + update() on every load).
+        if (!hadController) return;
+        reloading = true;
+        location.reload();
+      });
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => {
-          // swallow; SW registration is best-effort.
-        });
+        navigator.serviceWorker
+          .register('/sw.js', { updateViaCache: 'none' })
+          .catch(() => {});
       });
     }
   }

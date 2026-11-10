@@ -11,7 +11,7 @@ const HISTORY_DIR_NAME = '.history';
 const HISTORY_CAP      = 50;
 const USAGE_FILE       = path.join(os.homedir(), '.grok-remote', 'skill-usage.json');
 
-type SkillScope = 'cwd' | 'repo' | 'user-grok' | 'user-claude';
+type SkillScope = 'cwd' | 'repo' | 'user-grok' | 'user-claude' | 'bundled';
 
 interface SkillSource { scope: SkillScope; dir: string | null }
 
@@ -77,6 +77,7 @@ function activeSources(): { scope: SkillScope; dir: string }[] {
     { scope: 'repo',        dir: repo ? path.join(repo, '.grok', 'skills') : null },
     { scope: 'user-grok',   dir: path.join(home, '.grok', 'skills') },
     { scope: 'user-claude', dir: path.join(home, '.claude', 'skills') },
+    { scope: 'bundled',     dir: path.join(home, '.grok', 'bundled', 'skills') },
   ];
   const present = sources.filter((s): s is { scope: SkillScope; dir: string } =>
     Boolean(s.dir) && safeIsDir(s.dir as string));
@@ -93,6 +94,7 @@ function allScopes(): { scope: SkillScope; dir: string }[] {
     { scope: 'repo',        dir: repo ? path.join(repo, '.grok', 'skills') : null },
     { scope: 'user-grok',   dir: path.join(home, '.grok', 'skills') },
     { scope: 'user-claude', dir: path.join(home, '.claude', 'skills') },
+    { scope: 'bundled',     dir: path.join(home, '.grok', 'bundled', 'skills') },
   ];
   return sources.filter((s): s is { scope: SkillScope; dir: string } => Boolean(s.dir));
 }
@@ -230,6 +232,7 @@ async function archiveHandler(req: IncomingMessage, res: ServerResponse): Promis
   const name  = typeof body.name  === 'string' ? body.name  : '';
   if (!scope || !name) { send(res, 400, { ok: false, error: 'scope and name required' }); return; }
   if (!safeName(name)) { send(res, 400, { ok: false, error: 'invalid name' }); return; }
+  if (scope === 'bundled') { send(res, 400, { ok: false, error: 'bundled skills are read-only' }); return; }
 
   const sdir = scopeDir(scope);
   const adir = archiveDirForScope(scope);
@@ -258,6 +261,7 @@ async function restoreHandler(req: IncomingMessage, res: ServerResponse): Promis
   const name  = typeof body.name  === 'string' ? body.name  : '';
   if (!scope || !name) { send(res, 400, { ok: false, error: 'scope and name required' }); return; }
   if (!safeName(name)) { send(res, 400, { ok: false, error: 'invalid name' }); return; }
+  if (scope === 'bundled') { send(res, 400, { ok: false, error: 'bundled skills are read-only' }); return; }
 
   const sdir = scopeDir(scope);
   const adir = archiveDirForScope(scope);
@@ -288,6 +292,7 @@ async function moveHandler(req: IncomingMessage, res: ServerResponse): Promise<v
   if (!scope || !name || !toScope) { send(res, 400, { ok: false, error: 'scope, name, toScope required' }); return; }
   if (scope === toScope) { send(res, 400, { ok: false, error: 'toScope equals scope' }); return; }
   if (!safeName(name))   { send(res, 400, { ok: false, error: 'invalid name' }); return; }
+  if (scope === 'bundled' || toScope === 'bundled') { send(res, 400, { ok: false, error: 'bundled skills are read-only' }); return; }
 
   const fromBase = scopeDir(scope);
   const toBase   = scopeDir(toScope);
@@ -331,6 +336,7 @@ async function saveContentHandler(req: IncomingMessage, res: ServerResponse): Pr
   if (!scope || !name) { send(res, 400, { ok: false, error: 'scope and name required' }); return; }
   if (typeof content !== 'string') { send(res, 400, { ok: false, error: 'content must be a string' }); return; }
   if (!safeName(name)) { send(res, 400, { ok: false, error: 'invalid name' }); return; }
+  if (scope === 'bundled') { send(res, 400, { ok: false, error: 'bundled skills are read-only' }); return; }
 
   const sdir = scopeDir(scope);
   if (!sdir) { send(res, 400, { ok: false, error: `unknown scope: ${scope}` }); return; }

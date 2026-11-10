@@ -1,8 +1,7 @@
 // Thin wrapper around the `grok` CLI for the system-pages routes.
 
 import { spawn } from 'node:child_process';
-
-const GROK_BIN = process.env['GROK_BIN'] || 'grok';
+import { resolveGrokBin } from './grok-bin.js';
 
 export interface GrokCliErrorInit {
   code?: number | null;
@@ -54,7 +53,7 @@ export function runGrok(args: string[], opts: RunGrokOptions = {}): Promise<RunG
   } = opts;
 
   return new Promise<RunGrokResult>((resolve, reject) => {
-    const child = spawn(GROK_BIN, args, {
+    const child = spawn(resolveGrokBin(env), args, {
       cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],

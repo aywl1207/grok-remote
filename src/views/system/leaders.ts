@@ -65,10 +65,10 @@ function render(): void {
   c.innerHTML = `
     <section class="system-page leaders-page">
       <div class="leaders-header">
-        <h2 class="system-page-title">Leader processes</h2>
+        <h2 class="system-page-title">Leader Processes</h2>
         <div class="leaders-actions">
-          <button class="leaders-btn" data-act="refresh">refresh</button>
-          <button class="leaders-btn leaders-btn--danger" data-act="kill-all">kill all</button>
+          <button class="leaders-btn" data-act="refresh">Refresh</button>
+          <button class="leaders-btn leaders-btn--danger" data-act="kill-all">Kill All</button>
         </div>
       </div>
       <p class="system-page-sub">
@@ -90,7 +90,7 @@ function renderStatus(): void {
   const el = activeContainer.querySelector('[data-role=status]') as HTMLElement | null;
   if (!el) return;
   if (state.loading) {
-    el.textContent = 'loading...';
+    el.textContent = 'Loading…';
     el.className = 'leaders-status leaders-status--loading';
   } else if (state.error) {
     el.textContent = state.error;
@@ -114,7 +114,7 @@ function renderTable(): void {
     return;
   }
 
-  const headers = ['pid', 'cwd', 'model', 'clients', 'uptime', 'memory', ''];
+  const headers = ['PID', 'Cwd', 'Model', 'Clients', 'Uptime', 'Memory', ''];
   const rows = state.leaders.map((ld) => renderRow(ld)).join('');
   wrap.innerHTML = `
     <table class="leaders-table">
@@ -162,8 +162,8 @@ function renderRow(ld: Leader): string {
     <tr data-pid="${escapeHtml(pid)}" class="leaders-row ${expanded ? 'leaders-row--open' : ''}">
       ${cells.map((c) => `<td>${escapeHtml(String(c))}</td>`).join('')}
       <td class="leaders-row-actions">
-        <button class="leaders-btn leaders-btn--small" data-act="toggle-info">${r.open ? 'hide' : 'info'}</button>
-        <button class="leaders-btn leaders-btn--small" data-act="toggle-profile">${r.profileOpen ? 'hide' : 'profile'}</button>
+        <button class="leaders-btn leaders-btn--small" data-act="toggle-info">${r.open ? 'Hide' : 'Info'}</button>
+        <button class="leaders-btn leaders-btn--small" data-act="toggle-profile">${r.profileOpen ? 'Hide' : 'Profile'}</button>
       </td>
     </tr>
   `;
@@ -184,33 +184,33 @@ function renderRow(ld: Leader): string {
 function renderInfoSection(r: RowState): string {
   if (r.infoErr) {
     return `<div class="leaders-detail-section">
-      <div class="leaders-detail-title">info</div>
+      <div class="leaders-detail-title">Info</div>
       <div class="leaders-error">${escapeHtml(r.infoErr)}</div>
     </div>`;
   }
   if (!r.info) {
     return `<div class="leaders-detail-section">
-      <div class="leaders-detail-title">info</div>
-      <div class="leaders-muted">loading...</div>
+      <div class="leaders-detail-title">Info</div>
+      <div class="leaders-muted">Loading…</div>
     </div>`;
   }
   return `<div class="leaders-detail-section">
-    <div class="leaders-detail-title">info</div>
+    <div class="leaders-detail-title">Info</div>
     <pre class="leaders-pre">${escapeHtml(JSON.stringify(r.info, null, 2))}</pre>
   </div>`;
 }
 
 function renderProfileSection(r: RowState): string {
   return `<div class="leaders-detail-section">
-    <div class="leaders-detail-title">profile</div>
+    <div class="leaders-detail-title">Profile</div>
     <div class="leaders-profile-row">
-      <button class="leaders-btn leaders-btn--small" data-act="profile-status">status</button>
+      <button class="leaders-btn leaders-btn--small" data-act="profile-status">Status</button>
       <label class="leaders-inline">
-        freq hz
+        Freq Hz
         <input class="leaders-input leaders-input--small" type="text" data-input="freq" value="${escapeHtml(r.frequencyHz)}" placeholder="default">
       </label>
-      <button class="leaders-btn leaders-btn--small" data-act="profile-start">start</button>
-      <button class="leaders-btn leaders-btn--small" data-act="profile-stop">stop</button>
+      <button class="leaders-btn leaders-btn--small" data-act="profile-start">Start</button>
+      <button class="leaders-btn leaders-btn--small" data-act="profile-stop">Stop</button>
     </div>
     ${r.profileErr ? `<div class="leaders-error">${escapeHtml(r.profileErr)}</div>` : ''}
     ${r.profileMsg ? `<pre class="leaders-pre">${escapeHtml(r.profileMsg)}</pre>` : ''}
@@ -275,7 +275,7 @@ function toggleProfile(pid: string): void {
 async function doProfileStatus(pid: string): Promise<void> {
   const r = getRow(pid);
   r.profileErr = null;
-  r.profileMsg = 'loading...';
+  r.profileMsg = 'Loading…';
   renderTable();
   try {
     const resp = await api.leaders.profileStatus(pid) as { output?: string };

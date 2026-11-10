@@ -79,18 +79,18 @@ export function openUpdateModal({ current, latest }: UpdateModalOptions = {}): {
     stepsHost.appendChild(row.node);
   }
 
-  const statusEl = el('div', { class: 'update-modal__status update-modal__status--running' }, 'connecting...') as HTMLElement;
+  const statusEl = el('div', { class: 'update-modal__status update-modal__status--running' }, 'Connecting…') as HTMLElement;
   const dismissBtn = el('button', {
     type: 'button',
     class: 'btn update-modal__dismiss',
     onclick: () => close(),
-  }, 'close') as HTMLButtonElement;
+  }, 'Close') as HTMLButtonElement;
   dismissBtn.hidden = true;
   const footer = el('div', { class: 'update-modal__footer' }, statusEl, dismissBtn);
 
   const card = el('div', { class: 'update-modal__card' },
     el('div', { class: 'update-modal__head' },
-      el('div', { class: 'update-modal__title' }, 'updating grok-remote'),
+      el('div', { class: 'update-modal__title' }, 'Updating grok-remote'),
       closeBtn,
     ),
     headerSummary,
@@ -127,15 +127,15 @@ export function openUpdateModal({ current, latest }: UpdateModalOptions = {}): {
     const status = ev && ev.status;
     if (!step) return;
     if (step === 'open') {
-      setStatus('streaming update...', 'running');
+      setStatus('Streaming update…', 'running');
       return;
     }
     if (step === 'done') {
       if (status === 'fail') {
-        setStatus(`update failed: ${ev?.detail || 'unknown error'}`, 'fail');
+        setStatus(`update failed: ${ev?.detail || 'Unknown error'}`, 'fail');
         dismissBtn.hidden = false;
       } else {
-        setStatus('update applied; waiting for server', 'running');
+        setStatus('Update applied; waiting for server', 'running');
       }
       return;
     }
@@ -159,17 +159,17 @@ export function openUpdateModal({ current, latest }: UpdateModalOptions = {}): {
     } catch (err) {
       if (aborted) return;
       const msg = err instanceof Error ? err.message : String(err);
-      setStatus(`could not start update: ${msg}`, 'fail');
+      setStatus(`Could not start update: ${msg}`, 'fail');
       dismissBtn.hidden = false;
       return;
     }
     if (res.status === 409) {
-      setStatus('an update is already in progress in another tab. close it and try again.', 'fail');
+      setStatus('An update is already in progress in another tab. Close it and try again.', 'fail');
       dismissBtn.hidden = false;
       return;
     }
     if (!res.ok || !res.body) {
-      setStatus(`update endpoint failed: HTTP ${res.status}`, 'fail');
+      setStatus(`Update endpoint failed: HTTP ${res.status}`, 'fail');
       dismissBtn.hidden = false;
       return;
     }
@@ -210,7 +210,7 @@ export function openUpdateModal({ current, latest }: UpdateModalOptions = {}): {
     } catch (err) {
       if (!aborted && !restartStarted) {
         const msg = err instanceof Error ? err.message : String(err);
-        setStatus(`stream interrupted: ${msg}`, 'fail');
+        setStatus(`Stream interrupted: ${msg}`, 'fail');
         dismissBtn.hidden = false;
         return;
       }
@@ -218,8 +218,8 @@ export function openUpdateModal({ current, latest }: UpdateModalOptions = {}): {
     if (aborted) return;
     if (restartStarted) {
       const row = stepRows.get('restart');
-      if (row) row.markWaiting('waiting for server to come back...');
-      setStatus('waiting for server to come back...', 'running');
+      if (row) row.markWaiting('Waiting for the server to come back…');
+      setStatus('Waiting for the server to come back…', 'running');
       startHealthPoll();
     } else {
       dismissBtn.hidden = false;
@@ -232,9 +232,9 @@ export function openUpdateModal({ current, latest }: UpdateModalOptions = {}): {
     const tick = async (): Promise<void> => {
       if (aborted) return;
       if (Date.now() > healthDeadline) {
-        setStatus('server did not come back in 30s. check `pm2 logs grok-remote`.', 'fail');
+        setStatus('Server did not come back in 30s. Check `pm2 logs grok-remote`.', 'fail');
         const row = stepRows.get('restart');
-        if (row) row.markFail('did not recover within 30s');
+        if (row) row.markFail('Did not recover within 30s');
         dismissBtn.hidden = false;
         return;
       }
@@ -252,7 +252,7 @@ export function openUpdateModal({ current, latest }: UpdateModalOptions = {}): {
             } catch { /* ignore */ }
             const row = stepRows.get('restart');
             if (row) row.markOk(`booted ${v.gitSha.slice(0, 7)} (v${v.version || '?'})`);
-            setStatus('reloading...', 'ok');
+            setStatus('Reloading…', 'ok');
             setTimeout(() => location.reload(), 600);
             return;
           }

@@ -2,12 +2,12 @@
 <html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#0c1117" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Grok Remote" />
-    <title>grok-remote</title>
+    <title>Grok Remote</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%2280%22 font-size=%2280%22>·</text></svg>" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -17,30 +17,31 @@
     <div class="scanlines" aria-hidden="true"></div>
 
     <header class="topbar">
-      <button class="topbar-panel-btn topbar-panel-btn--left" id="topbar-sidebar-left" type="button" title="toggle conversations sidebar" aria-label="toggle conversations sidebar" hidden></button>
+      <button class="topbar-panel-btn topbar-panel-btn--left" id="topbar-sidebar-left" type="button" title="Toggle conversations sidebar" aria-label="Toggle conversations sidebar" hidden></button>
       <button class="hamburger" id="hamburger-btn" type="button" aria-label="Toggle menu" aria-expanded="false">
         <span></span><span></span><span></span>
       </button>
       <a class="brand" id="brand-link" href="#/">
         <span class="brand-dot"></span>
-        <span class="brand-active" id="brand-active" hidden title="agents active"></span>
-        <span class="brand-name">Grok-Remote</span>
+        <span class="brand-active" id="brand-active" hidden title="Agents active"></span>
+        <span class="brand-name">Grok Remote</span>
       </a>
       <div class="topbar-right">
         <div class="status" id="status">
           <span class="status-pill status-pill--idle" id="status-pill">·</span>
-          <span class="status-text" id="status-text">probing tailnet</span>
+          <span class="status-text" id="status-text">Connecting…</span>
         </div>
-        <button class="topbar-bg" id="topbar-bg" type="button" hidden title="background processes (npm run dev, etc.)">
+        <button class="topbar-bg" id="topbar-bg" type="button" hidden title="Background processes (npm run dev, etc.)">
           <span class="topbar-bg__dot"></span>
-          <span class="topbar-bg__count">bg: 0</span>
+          <span class="topbar-bg__count">Bg: 0</span>
         </button>
-        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="cycle theme" title="cycle theme">
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Cycle theme" title="Cycle theme">
           <span class="theme-toggle-dot" id="theme-toggle-dot" aria-hidden="true"></span>
           <span class="theme-toggle-label" id="theme-toggle-label">dark</span>
         </button>
-        <button class="topbar-icon-btn" id="open-settings" title="settings" aria-label="settings"></button>
-        <button class="topbar-panel-btn topbar-panel-btn--right" id="topbar-sidebar-right" type="button" title="toggle tool calls panel" aria-label="toggle tool calls panel" hidden></button>
+        <button class="topbar-icon-btn" id="open-settings" title="Settings" aria-label="Settings"></button>
+        <button class="topbar-icon-btn" id="logout-btn" type="button" hidden title="Log out" aria-label="Log out"></button>
+        <button class="topbar-panel-btn topbar-panel-btn--right" id="topbar-sidebar-right" type="button" title="Toggle tool calls panel" aria-label="Toggle tool calls panel" hidden></button>
       </div>
     </header>
 

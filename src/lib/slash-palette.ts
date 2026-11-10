@@ -11,9 +11,9 @@
 //   - Filter `getCommands()` by case-insensitive prefix on `name`.
 //   - Keyboard: Up/Down highlight, Tab/Enter commit, Esc close.
 //   - Click commits.
-//   - After commit: inserts `/<name> ` into the textarea, closes the palette,
-//     and (if the command has `input.hint`) calls `onCommit({ command, hint })`
-//     so the host can render a `usage: /<name> <hint>` caption.
+//   - Enter on a command with no required argument runs it. A required
+//     `<arg>` still inserts `/<name> ` so the argument can be typed.
+//     Optional `[arg]` groups do not count as required.
 
 const VISIBLE_MAX = 8;
 const TRIGGER_RE  = /^\/([\w-]*)$/;
@@ -30,10 +30,16 @@ export interface SlashCommand {
 export interface SlashPaletteOptions {
   textarea: HTMLTextAreaElement;
   getCommands: () => SlashCommand[] | null | undefined;
-  onCommit?: (info: { command: SlashCommand; hint: string | null }) => void;
+  onCommit?: (info: { command: SlashCommand; hint: string | null; run?: boolean }) => void;
 }
 
 export type Detach = () => void;
+
+/** True when the hint still has a required `<arg>` after optional `[...]` groups. */
+export function slashHintHasRequiredArg(hint: string | null | undefined): boolean {
+  const stripped = String(hint ?? '').replace(/\[[^\]]*\]/g, '');
+  return stripped.includes('<');
+}
 
 export default function attachSlashPalette({ textarea, getCommands, onCommit }: SlashPaletteOptions): Detach {
   if (!textarea) throw new Error('attachSlashPalette: textarea required');
@@ -42,7 +48,8 @@ export default function attachSlashPalette({ textarea, getCommands, onCommit }: 
   const panel = document.createElement('div');
   panel.className = 'slash-palette hidden';
   panel.setAttribute('role', 'listbox');
-  textarea.parentElement?.appendChild(panel);
+  const parent = textarea.parentElement;
+  if (parent) parent.insertBefore(panel, textarea);
 
   let items: SlashCommand[] = [];
   let highlight = 0;
@@ -105,7 +112,7 @@ export default function attachSlashPalette({ textarea, getCommands, onCommit }: 
       if (cmd?.kind === 'skill') {
         const badge = document.createElement('span');
         badge.className = 'sp-badge sp-badge--skill';
-        badge.textContent = 'skill';
+        badge.textContent = 'Skill';
         if (cmd.scope) badge.title = cmd.scope;
         row.appendChild(badge);
       }
@@ -155,6 +162,17 @@ export default function attachSlashPalette({ textarea, getCommands, onCommit }: 
     if (!open || !items.length) return;
     const cmd = items[Math.max(0, Math.min(highlight, items.length - 1))];
     if (!cmd || !cmd.name) { close(); return; }
+    const hint = cmd.input?.hint ?? null;
+    const run = cmd.kind !== 'local' && !slashHintHasRequiredArg(hint);
+    if (cmd.kind === 'local' || run) {
+      textarea.value = run ? `/${cmd.name}` : '';
+      close();
+      if (typeof onCommit === 'function') {
+        try { onCommit({ command: cmd, hint, run }); } catch { /* ignore */ }
+      }
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
+    }
     const insert = '/' + cmd.name + ' ';
     textarea.value = insert;
     try {
@@ -163,9 +181,8 @@ export default function attachSlashPalette({ textarea, getCommands, onCommit }: 
     } catch { /* ignore */ }
     close();
     textarea.focus();
-    const hint = cmd?.input?.hint ?? null;
     if (typeof onCommit === 'function') {
-      try { onCommit({ command: cmd, hint }); } catch { /* ignore */ }
+      try { onCommit({ command: cmd, hint, run: false }); } catch { /* ignore */ }
     }
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
   }

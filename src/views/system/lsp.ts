@@ -73,14 +73,14 @@ function addToolbar(section: HTMLElement): void {
   const browse = document.createElement('button');
   browse.type = 'button';
   browse.className = 'mcp-btn';
-  browse.textContent = 'browse registry';
+  browse.textContent = 'Browse Registry';
   browse.addEventListener('click', () => openLspRegistryPicker(section));
   toolbar.appendChild(browse);
 
   const refresh = document.createElement('button');
   refresh.type = 'button';
   refresh.className = 'mcp-btn';
-  refresh.textContent = 'refresh';
+  refresh.textContent = 'Refresh';
   refresh.addEventListener('click', () => { void reload(section); });
   toolbar.appendChild(refresh);
 
@@ -90,22 +90,22 @@ function addToolbar(section: HTMLElement): void {
 async function reload(section: HTMLElement): Promise<void> {
   const { inspect, error } = await loadInspect();
   if (aborted) return;
-  if (error) { setStatusLine(section, 'failed to load: ' + error); return; }
+  if (error) { setStatusLine(section, 'Failed to load: ' + error); return; }
 
   const data = (inspect && typeof inspect === 'object') ? inspect as InspectShape : {};
   const items = Array.isArray(data.lspServers) ? data.lspServers : [];
   const cs = data.configSources || {};
   const banner: ConfigFile[] = [
-    ...(cs.userPath ? [{ label: 'user config', path: cs.userPath }] : []),
-    ...(Array.isArray(cs.projectPaths) ? cs.projectPaths.map((p) => ({ label: 'project config', path: p })) : []),
+    ...(cs.userPath ? [{ label: 'User config', path: cs.userPath }] : []),
+    ...(Array.isArray(cs.projectPaths) ? cs.projectPaths.map((p) => ({ label: 'Project config', path: p })) : []),
   ];
   addConfigFilesBanner(section, banner);
   clearBody(section);
 
   if (!items.length) {
     section.appendChild(emptyState({
-      message: 'no LSP servers configured.',
-      hint: 'add one from the registry or edit ~/.grok/lsp.json',
+      message: 'No LSP servers configured.',
+      hint: 'Add one from the registry or edit ~/.grok/lsp.json.',
     }));
     section.appendChild(buildFooterHint(
       'Starter snippet: ' +
@@ -169,7 +169,7 @@ async function addFromRegistry(entry: LspRegistryEntry, section: HTMLElement): P
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    setStatusLine(section, `failed to add ${entry.name}: ${msg}`);
+    setStatusLine(section, `Failed to add ${entry.name}: ${msg}`);
     return;
   }
   setStatusLine(section, `added ${entry.name}`);
@@ -189,13 +189,13 @@ function makeLspCard(s: LspServer): HTMLElement {
   const target = [cmd, ...args].filter(Boolean).join(' ');
 
   const actions = [{
-    label: 'copy JSON',
-    title: 'copy an lsp.json entry you can paste into ~/.grok/lsp.json',
+    label: 'Copy JSON',
+    title: 'Copy an lsp.json entry you can paste into ~/.grok/lsp.json',
     onClick: async (ev: MouseEvent): Promise<void> => {
       const ok = await copyToClipboard(toJson(s));
       const btn = ev.currentTarget as HTMLButtonElement;
       const prior = btn.textContent;
-      btn.textContent = ok ? 'copied' : 'copy failed';
+      btn.textContent = ok ? 'Copied' : 'Copy failed';
       setTimeout(() => { btn.textContent = prior; }, 1500);
     },
   }];
@@ -206,8 +206,8 @@ function makeLspCard(s: LspServer): HTMLElement {
     tags,
     path: shortenPath(target),
     sourceLabel: s.source?.plugin_name
-      ? `from plugin: ${s.source.plugin_name}`
-      : (s.source?.type ? `defined in ${scopeLabel(s.source.type)}:` : 'defined in:'),
+      ? `From plugin: ${s.source.plugin_name}`
+      : (s.source?.type ? `Defined in ${scopeLabel(s.source.type)}:` : 'Defined in:'),
     sourcePath: s.source?.path || '',
     fullRecord: s,
     actions,

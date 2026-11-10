@@ -34,8 +34,9 @@ const SCOPE_LABEL: Record<string, string> = {
   'repo':         'repo',
   'user-grok':    '~/.grok',
   'user-claude':  '~/.claude',
+  'bundled':      'bundled',
 };
-const SCOPE_ORDER = ['cwd', 'repo', 'user-grok', 'user-claude'];
+const SCOPE_ORDER = ['cwd', 'repo', 'user-grok', 'user-claude', 'bundled'];
 
 export async function mount(container: HTMLElement): Promise<void> {
   activeContainer = container;
@@ -51,7 +52,7 @@ export async function mount(container: HTMLElement): Promise<void> {
           Scope priority (high to low): cwd, repo, ~/.grok, ~/.claude.
         </p>
       </header>
-      <div class="skills-loading">loading skills...</div>
+      <div class="skills-loading">Loading skills…</div>
     </section>
   `;
   await reload(container);
@@ -76,7 +77,7 @@ async function reload(container: HTMLElement): Promise<void> {
       sectionEl.innerHTML = sectionEl.innerHTML.replace(/<div class="skills-loading">[^<]*<\/div>/, '');
       const empty = document.createElement('div');
       empty.className = 'system-page-empty';
-      empty.textContent = 'failed to load: ' + ((data && data.error) || 'unknown');
+      empty.textContent = 'Failed to load: ' + ((data && data.error) || 'unknown error');
       sectionEl.appendChild(empty);
       return;
     }
@@ -87,7 +88,7 @@ async function reload(container: HTMLElement): Promise<void> {
     sectionEl.querySelector('.skills-loading')?.remove();
     const empty = document.createElement('div');
     empty.className = 'system-page-empty';
-    empty.textContent = 'failed to load: ' + (err instanceof Error ? err.message : String(err));
+    empty.textContent = 'Failed to load: ' + (err instanceof Error ? err.message : String(err));
     sectionEl.appendChild(empty);
   }
 }
@@ -116,7 +117,7 @@ function render(sectionEl: HTMLElement, data: SkillsResponse): void {
   if (!active.length && !archived.length) {
     const empty = document.createElement('div');
     empty.className = 'system-page-empty';
-    empty.textContent = 'no skills found in any of the scopes above.';
+    empty.textContent = 'No skills found in any of the scopes above.';
     sectionEl.appendChild(empty);
     return;
   }
@@ -147,7 +148,7 @@ function render(sectionEl: HTMLElement, data: SkillsResponse): void {
     const title = document.createElement('button');
     title.type = 'button';
     title.className = 'skills-archived-toggle';
-    title.textContent = `archived (${archived.length})`;
+    title.textContent = `Archived (${archived.length})`;
     const grid = document.createElement('div');
     grid.className = 'skills-grid skills-archived-grid hidden';
     title.addEventListener('click', () => {
@@ -200,23 +201,23 @@ function makeCard(sk: SkillRecord, sectionEl: HTMLElement): HTMLElement {
   };
 
   if (sk.archived) {
-    actions.appendChild(mkBtn('restore', 'skills-card-btn--good', async () => {
+    actions.appendChild(mkBtn('Restore', 'skills-card-btn--good', async () => {
       try { await api.skills.restore(sk.scope, sk.name); if (activeContainer) await reload(activeContainer); }
-      catch (err) { const msg = err instanceof Error ? err.message : String(err); alert('restore failed: ' + msg); }
+      catch (err) { const msg = err instanceof Error ? err.message : String(err); alert('Restore failed: ' + msg); }
     }));
-    actions.appendChild(mkBtn('view SKILL.md', '', () => toggleView(sk, body, actions)));
+    actions.appendChild(mkBtn('View SKILL.md', '', () => toggleView(sk, body, actions)));
     return card;
   }
 
-  actions.appendChild(mkBtn('view', '', () => toggleView(sk, body, actions)));
-  actions.appendChild(mkBtn('edit', '', () => toggleEdit(sk, editEl, actions, sectionEl)));
-  actions.appendChild(mkBtn('history', '', () => toggleHistory(sk, histEl, actions, sectionEl)));
+  actions.appendChild(mkBtn('View', '', () => toggleView(sk, body, actions)));
+  actions.appendChild(mkBtn('Edit', '', () => toggleEdit(sk, editEl, actions, sectionEl)));
+  actions.appendChild(mkBtn('History', '', () => toggleHistory(sk, histEl, actions, sectionEl)));
 
   const moveSel = document.createElement('select');
   moveSel.className = 'skills-card-move';
   const defaultOpt = document.createElement('option');
   defaultOpt.value = '';
-  defaultOpt.textContent = 'move to...';
+  defaultOpt.textContent = 'Move to…';
   moveSel.appendChild(defaultOpt);
   for (const s of SCOPE_ORDER) {
     if (s === sk.scope) continue;
@@ -234,17 +235,17 @@ function makeCard(sk: SkillRecord, sectionEl: HTMLElement): HTMLElement {
       if (activeContainer) await reload(activeContainer);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      alert('move failed: ' + msg);
+      alert('Move failed: ' + msg);
       moveSel.value = '';
       moveSel.disabled = false;
     }
   });
   actions.appendChild(moveSel);
 
-  actions.appendChild(mkBtn('archive', 'skills-card-btn--warn', async () => {
-    if (!confirm(`archive /${sk.name}? It moves into the scope's .archive folder.`)) return;
+  actions.appendChild(mkBtn('Archive', 'skills-card-btn--warn', async () => {
+    if (!confirm(`Archive /${sk.name}? It moves into the scope's .archive folder.`)) return;
     try { await api.skills.archive(sk.scope, sk.name); if (activeContainer) await reload(activeContainer); }
-    catch (err) { const msg = err instanceof Error ? err.message : String(err); alert('archive failed: ' + msg); }
+    catch (err) { const msg = err instanceof Error ? err.message : String(err); alert('Archive failed: ' + msg); }
   }));
 
   return card;
@@ -264,15 +265,15 @@ async function toggleView(sk: SkillRecord, body: HTMLElement, actions: HTMLEleme
     return;
   }
   hideAllPanels(card);
-  body.textContent = 'loading...';
+  body.textContent = 'Loading…';
   body.classList.remove('hidden');
   try {
     const r = await api.skills.read(sk.mdPath) as SkillReadResponse;
     if (r && r.ok) body.textContent = r.content || '';
-    else body.textContent = 'error: ' + ((r && r.error) || 'unknown');
+    else body.textContent = 'Error: ' + ((r && r.error) || 'Unknown');
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    body.textContent = 'error: ' + msg;
+    body.textContent = 'Error: ' + msg;
   }
 }
 
@@ -284,15 +285,15 @@ async function toggleEdit(sk: SkillRecord, editEl: HTMLElement, actions: HTMLEle
   }
   hideAllPanels(card);
   editEl.classList.remove('hidden');
-  editEl.innerHTML = `<div class="skills-card-edit-loading">loading...</div>`;
+  editEl.innerHTML = `<div class="skills-card-edit-loading">Loading…</div>`;
   let original = '';
   try {
     const r = await api.skills.read(sk.mdPath) as SkillReadResponse;
     if (r && r.ok) original = r.content || '';
-    else throw new Error((r && r.error) || 'read failed');
+    else throw new Error((r && r.error) || 'Read failed');
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    editEl.innerHTML = `<div class="skills-card-edit-err">load failed: ${escapeHtml(msg)}</div>`;
+    editEl.innerHTML = `<div class="skills-card-edit-err">Load failed: ${escapeHtml(msg)}</div>`;
     return;
   }
   editEl.replaceChildren();
@@ -308,22 +309,22 @@ async function toggleEdit(sk: SkillRecord, editEl: HTMLElement, actions: HTMLEle
   const saveBtn = document.createElement('button');
   saveBtn.type = 'button';
   saveBtn.className = 'skills-card-btn skills-card-btn--good';
-  saveBtn.textContent = 'save';
+  saveBtn.textContent = 'Save';
   const cancelBtn = document.createElement('button');
   cancelBtn.type = 'button';
   cancelBtn.className = 'skills-card-btn';
-  cancelBtn.textContent = 'cancel';
+  cancelBtn.textContent = 'Cancel';
   saveBtn.addEventListener('click', async () => {
     saveBtn.disabled = true;
     cancelBtn.disabled = true;
-    status.textContent = 'saving...';
+    status.textContent = 'Saving…';
     try {
       await api.skills.saveContent(sk.scope, sk.name, ta.value);
-      status.textContent = 'saved.';
+      status.textContent = 'Saved.';
       if (activeContainer) await reload(activeContainer);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      status.textContent = 'save failed: ' + msg;
+      status.textContent = 'Save failed: ' + msg;
       saveBtn.disabled = false;
       cancelBtn.disabled = false;
     }
@@ -344,22 +345,22 @@ async function toggleHistory(sk: SkillRecord, histEl: HTMLElement, actions: HTML
   }
   hideAllPanels(card);
   histEl.classList.remove('hidden');
-  histEl.innerHTML = `<div class="skills-card-edit-loading">loading...</div>`;
+  histEl.innerHTML = `<div class="skills-card-edit-loading">Loading…</div>`;
   let list: SkillHistoryItem[] = [];
   try {
     const r = await api.skills.history(sk.scope, sk.name) as SkillHistoryResponse;
     if (r && r.ok) list = r.history || [];
-    else throw new Error((r && r.error) || 'history failed');
+    else throw new Error((r && r.error) || 'History failed');
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    histEl.innerHTML = `<div class="skills-card-edit-err">history failed: ${escapeHtml(msg)}</div>`;
+    histEl.innerHTML = `<div class="skills-card-edit-err">History failed: ${escapeHtml(msg)}</div>`;
     return;
   }
   histEl.replaceChildren();
   if (!list.length) {
     const empty = document.createElement('div');
     empty.className = 'skills-card-history-empty';
-    empty.textContent = 'no revision history yet. Edit + save to create snapshots.';
+    empty.textContent = 'No revision history yet. Edit and save to create snapshots.';
     histEl.appendChild(empty);
     return;
   }
@@ -376,13 +377,13 @@ async function toggleHistory(sk: SkillRecord, histEl: HTMLElement, actions: HTML
     tsBtn.textContent = item.ts;
     tsBtn.addEventListener('click', async () => {
       viewer.classList.remove('hidden');
-      viewer.textContent = 'loading...';
+      viewer.textContent = 'Loading…';
       try {
         const r = await api.skills.historySnapshot(sk.scope, sk.name, item.ts) as SkillReadResponse;
-        viewer.textContent = (r && r.ok) ? (r.content || '') : ('error: ' + ((r && r.error) || 'unknown'));
+        viewer.textContent = (r && r.ok) ? (r.content || '') : ('Error: ' + ((r && r.error) || 'unknown'));
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        viewer.textContent = 'error: ' + msg;
+        viewer.textContent = 'Error: ' + msg;
       }
     });
     const sizeEl = document.createElement('span');
@@ -391,17 +392,17 @@ async function toggleHistory(sk: SkillRecord, histEl: HTMLElement, actions: HTML
     const restoreBtn = document.createElement('button');
     restoreBtn.type = 'button';
     restoreBtn.className = 'skills-card-btn skills-card-btn--good';
-    restoreBtn.textContent = 'restore';
-    restoreBtn.title = 'overwrite current SKILL.md with this revision (current is snapshotted first)';
+    restoreBtn.textContent = 'Restore';
+    restoreBtn.title = 'Overwrite current SKILL.md with this revision (current is snapshotted first)';
     restoreBtn.addEventListener('click', async () => {
-      if (!confirm(`restore /${sk.name} to revision ${item.ts}?`)) return;
+      if (!confirm(`Restore /${sk.name} to revision ${item.ts}?`)) return;
       restoreBtn.disabled = true;
       try {
         await api.skills.historyRestore(sk.scope, sk.name, item.ts);
         if (activeContainer) await reload(activeContainer);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        alert('restore failed: ' + msg);
+        alert('Restore failed: ' + msg);
         restoreBtn.disabled = false;
       }
     });

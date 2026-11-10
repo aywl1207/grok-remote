@@ -55,21 +55,21 @@ export function unmount(): void {
 async function reload(section: HTMLElement): Promise<void> {
   const { inspect, error } = await loadInspect();
   if (aborted) return;
-  if (error) { setStatusLine(section, 'failed to load: ' + error); return; }
+  if (error) { setStatusLine(section, 'Failed to load: ' + error); return; }
   const data = (inspect && typeof inspect === 'object') ? inspect as InspectShape : {};
   const hooks = Array.isArray(data.hooks) ? data.hooks : [];
   const cs = data.configSources || {};
   const banner: ConfigFile[] = [
-    ...(cs.userPath ? [{ label: 'user config', path: cs.userPath }] : []),
-    ...(Array.isArray(cs.projectPaths) ? cs.projectPaths.map((p) => ({ label: 'project config', path: p })) : []),
+    ...(cs.userPath ? [{ label: 'User config', path: cs.userPath }] : []),
+    ...(Array.isArray(cs.projectPaths) ? cs.projectPaths.map((p) => ({ label: 'Project config', path: p })) : []),
   ];
   addConfigFilesBanner(section, banner);
   clearBody(section);
 
   if (!hooks.length) {
     const empty = emptyState({
-      message: 'no hooks configured.',
-      hint: 'edit ~/.grok/config.toml and add a [[hooks]] table',
+      message: 'No hooks configured.',
+      hint: 'Edit ~/.grok/config.toml and add a [[hooks]] table.',
     });
     section.appendChild(empty);
     section.appendChild(buildFooterHint(
@@ -123,13 +123,13 @@ function makeHookCard(h: HookRecord): HTMLElement {
   const actions: { label: string; title: string; onClick: (ev: MouseEvent) => Promise<void> }[] = [];
   if (!fromPlugin) {
     actions.push({
-      label: 'copy TOML',
-      title: 'copy a [[hooks]] block you can paste into config.toml',
+      label: 'Copy TOML',
+      title: 'Copy a [[hooks]] block you can paste into config.toml',
       onClick: async (ev: MouseEvent): Promise<void> => {
         const ok = await copyToClipboard(toToml(h));
         const btn = ev.currentTarget as HTMLButtonElement;
         const prior = btn.textContent;
-        btn.textContent = ok ? 'copied' : 'copy failed';
+        btn.textContent = ok ? 'Copied' : 'Copy failed';
         setTimeout(() => { btn.textContent = prior; }, 1500);
       },
     });
@@ -142,8 +142,8 @@ function makeHookCard(h: HookRecord): HTMLElement {
     description: '',
     path: tgt ? shortenPath(tgt) : '',
     sourceLabel: pluginTag
-      ? `from plugin: ${pluginTag}`
-      : (h.source?.type ? `defined in ${scopeLabel(h.source.type)}:` : 'defined in:'),
+      ? `From plugin: ${pluginTag}`
+      : (h.source?.type ? `Defined in ${scopeLabel(h.source.type)}:` : 'Defined in:'),
     sourcePath: h.source?.path || '',
     fullRecord: h,
     actions,

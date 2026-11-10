@@ -34,6 +34,12 @@ interface FilesState {
   treeCollapsed?: boolean;
   onFilesChanged?: (ev: Event) => void;
   htmlMode?: 'preview' | 'source';
+  fileInput?: HTMLInputElement;
+  statusEl?: HTMLElement;
+  progressRoot?: HTMLElement;
+  progressBar?: HTMLElement;
+  progressLabel?: HTMLElement;
+  progressMeta?: HTMLElement;
 }
 
 interface FileEntry { name: string; type: 'directory' | 'file'; size?: number; isHidden?: boolean }
@@ -88,7 +94,7 @@ function applyTreeCollapsedClass(state: FilesState): void {
   if (state.treeToggleBtn) {
     const c = !!state.treeCollapsed;
     state.treeToggleBtn.innerHTML = iconHtml(c ? 'panel-left-open' : 'panel-left-close');
-    state.treeToggleBtn.title = c ? 'show file list' : 'hide file list';
+    state.treeToggleBtn.title = c ? 'Show file list' : 'Hide file list';
   }
 }
 
@@ -103,7 +109,7 @@ export function mountFilesTab(container: HTMLElement, agent: FilesAgent | null |
   unmountFilesTab();
   if (!container) return;
   if (!agent || !agent.id) {
-    const empty = el('div', { class: 'pane-empty' }, 'no agent selected');
+    const empty = el('div', { class: 'pane-empty' }, 'No agent selected');
     container.replaceChildren(empty);
     return;
   }
@@ -119,9 +125,28 @@ export function mountFilesTab(container: HTMLElement, agent: FilesAgent | null |
 
   const refreshBtn = el('button', {
     class: 'btn btn--ghost files-refresh',
-    title: 'refresh',
+    title: 'Refresh',
     onclick: () => loadDir(state, state.currentPath),
-  }, 'refresh');
+  }, 'Refresh');
+
+  const fileInput = el('input', {
+    type: 'file',
+    class: 'files-upload-input',
+    multiple: '',
+    onchange: () => {
+      const input = fileInput as HTMLInputElement;
+      const list = input.files;
+      if (list && list.length) void uploadFiles(state, list);
+      input.value = '';
+    },
+  }) as HTMLInputElement;
+
+  const uploadBtn = el('button', {
+    class: 'btn btn--ghost files-upload',
+    type: 'button',
+    title: 'Upload files into this folder',
+    onclick: () => fileInput.click(),
+  }, 'Upload');
 
   const backBtn = el('button', {
     class: 'btn btn--ghost files-back hidden',
@@ -130,26 +155,38 @@ export function mountFilesTab(container: HTMLElement, agent: FilesAgent | null |
       renderViewer(state);
       state.root?.classList.remove('files--show-viewer');
     },
-  }, '< back') as HTMLButtonElement;
+  }, '< Back') as HTMLButtonElement;
 
   const breadcrumb = el('div', { class: 'files-breadcrumb' }) as HTMLElement;
   const treeBody = el('div', { class: 'files-tree-body' }) as HTMLElement;
   const viewerBody = el('div', { class: 'files-viewer-body' },
-    el('div', { class: 'pane-empty' }, 'select a file to preview')) as HTMLElement;
+    el('div', { class: 'pane-empty' }, 'Select a file to preview')) as HTMLElement;
 
   const treeToggleBtn = el('button', {
     type: 'button',
     class: 'files-tree-toggle',
-    title: 'collapse file list',
-    'aria-label': 'toggle file list',
+    title: 'Collapse file list',
+    'aria-label': 'Toggle file list',
     onclick: () => setTreeCollapsed(state, !state.treeCollapsed),
   }) as HTMLButtonElement;
+
+  const progressLabel = el('div', { class: 'files-progress__label' }, '') as HTMLElement;
+  const progressBar = el('div', { class: 'files-progress__bar' }) as HTMLElement;
+  const progressMeta = el('div', { class: 'files-progress__meta' }, '') as HTMLElement;
+  const progressRoot = el('div', { class: 'files-progress', hidden: '' },
+    progressLabel,
+    el('div', { class: 'files-progress__track' }, progressBar),
+    progressMeta,
+  ) as HTMLElement;
 
   const tree = el('div', { class: 'files-tree' },
     el('div', { class: 'files-tree-header' },
       breadcrumb,
+      uploadBtn,
       refreshBtn,
+      fileInput,
     ),
+    progressRoot,
     treeBody,
   );
   const viewer = el('div', { class: 'files-viewer' },
@@ -169,10 +206,16 @@ export function mountFilesTab(container: HTMLElement, agent: FilesAgent | null |
   state.viewerTitle = viewer.querySelector('.files-viewer-title') as HTMLElement | undefined;
   state.backBtn = backBtn;
   state.treeToggleBtn = treeToggleBtn;
+  state.fileInput = fileInput;
+  state.progressRoot = progressRoot;
+  state.progressBar = progressBar;
+  state.progressLabel = progressLabel;
+  state.progressMeta = progressMeta;
   state.treeCollapsed = readTreeCollapsed();
   applyTreeCollapsedClass(state);
 
   container.replaceChildren(root);
+  bindDropTarget(state, tree);
 
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
   state.onFilesChanged = (ev: Event): void => {
@@ -204,7 +247,7 @@ async function loadDir(state: FilesState, p: string): Promise<void> {
   state.currentPath = p || '';
   writeStoredPath(state.agent.id, state.currentPath);
   renderBreadcrumb(state);
-  state.treeBody?.replaceChildren(el('div', { class: 'files-loading' }, 'loading...'));
+  state.treeBody?.replaceChildren(el('div', { class: 'files-loading' }, 'Loading…'));
   try {
     const res = await api.listFiles(state.agent.id, state.currentPath) as DirResponse | FileResponse | null;
     if (state.destroyed) return;
@@ -220,15 +263,15 @@ async function loadDir(state: FilesState, p: string): Promise<void> {
         await openFile(state, state.selectedFile);
         return;
       }
-      state.treeBody?.replaceChildren(el('div', { class: 'pane-empty' }, 'empty'));
+      state.treeBody?.replaceChildren(el('div', { class: 'pane-empty' }, 'Empty'));
       return;
     }
     renderDir(state, res);
   } catch (err) {
     if (state.destroyed) return;
-    const msg = err instanceof Error ? err.message : 'failed to load directory';
+    const msg = err instanceof Error ? err.message : 'Failed to load directory';
     state.treeBody?.replaceChildren(
-      el('div', { class: 'files-error' }, `error: ${msg}`),
+      el('div', { class: 'files-error' }, `Error: ${msg}`),
     );
     if (state.currentPath) {
       state.currentPath = '';
@@ -243,7 +286,7 @@ function renderBreadcrumb(state: FilesState): void {
   parts.push(el('button', {
     class: 'files-crumb',
     onclick: () => loadDir(state, ''),
-  }, 'cwd'));
+  }, 'CWD'));
   if (state.currentPath) {
     const segments = state.currentPath.split('/').filter(Boolean);
     let acc = '';
@@ -270,18 +313,18 @@ function renderDir(state: FilesState, res: DirResponse): void {
       onclick: () => loadDir(state, parentPath(state.currentPath)),
     },
       el('span', { class: 'files-row-icon' }, '..'),
-      el('span', { class: 'files-row-name' }, 'parent directory'),
+      el('span', { class: 'files-row-name' }, 'Parent directory'),
     ));
   }
 
   for (const ent of entries) {
     const isDir = ent.type === 'directory';
+    const full = joinPath(state.currentPath, ent.name);
     const row = el('button', {
       class: `files-row files-row--${isDir ? 'dir' : 'file'}${ent.isHidden ? ' files-row--hidden' : ''}`,
       onclick: isDir
         ? () => loadDir(state, joinPath(state.currentPath, ent.name))
         : () => {
-            const full = joinPath(state.currentPath, ent.name);
             void openFile(state, full);
           },
     },
@@ -289,11 +332,23 @@ function renderDir(state: FilesState, res: DirResponse): void {
       el('span', { class: 'files-row-name' }, ent.name + (isDir ? '/' : '')),
       el('span', { class: 'files-row-size' }, isDir ? '' : fmtSize(ent.size)),
     );
-    rows.push(row);
+    if (isDir) {
+      rows.push(row);
+    } else {
+      rows.push(el('div', { class: 'files-row-wrap' },
+        row,
+        el('a', {
+          class: 'files-row-download',
+          href: api.fileRawUrl(state.agent.id, full, { download: true }),
+          download: ent.name,
+          title: `Download ${ent.name}`,
+        }, '↓'),
+      ));
+    }
   }
 
   if (!rows.length) {
-    state.treeBody?.replaceChildren(el('div', { class: 'pane-empty' }, 'empty directory'));
+    state.treeBody?.replaceChildren(el('div', { class: 'pane-empty' }, 'Empty directory'));
     return;
   }
   state.treeBody?.replaceChildren(...rows);
@@ -302,7 +357,7 @@ function renderDir(state: FilesState, res: DirResponse): void {
 async function openFile(state: FilesState, filePath: string): Promise<void> {
   state.selectedFile = filePath;
   if (state.viewerTitle) state.viewerTitle.textContent = filePath;
-  state.viewerBody?.replaceChildren(el('div', { class: 'files-loading' }, 'loading...'));
+  state.viewerBody?.replaceChildren(el('div', { class: 'files-loading' }, 'Loading…'));
   state.root?.classList.add('files--show-viewer');
   state.backBtn?.classList.remove('hidden');
 
@@ -317,9 +372,9 @@ async function openFile(state: FilesState, filePath: string): Promise<void> {
     renderViewerContents(state, res);
   } catch (err) {
     if (state.destroyed) return;
-    const msg = err instanceof Error ? err.message : 'failed to read file';
+    const msg = err instanceof Error ? err.message : 'Failed to read file';
     state.viewerBody?.replaceChildren(
-      el('div', { class: 'files-error' }, `error: ${msg}`),
+      el('div', { class: 'files-error' }, `Error: ${msg}`),
     );
   }
 }
@@ -347,6 +402,7 @@ function renderMediaViewer(state: FilesState, filePath: string): void {
   const toolbar = el('div', { class: 'files-media-toolbar' },
     el('span', { class: 'files-media-name' }, basename(filePath)),
     el('span', { class: 'files-html-spacer' }),
+    downloadLink(state, filePath),
     popoutBtn,
   );
 
@@ -385,7 +441,7 @@ function renderViewer(state: FilesState): void {
   if (!state.selectedFile) {
     if (state.viewerTitle) state.viewerTitle.textContent = '';
     state.viewerBody?.replaceChildren(
-      el('div', { class: 'pane-empty' }, 'select a file to preview'),
+      el('div', { class: 'pane-empty' }, 'Select a file to preview'),
     );
     state.backBtn?.classList.add('hidden');
   }
@@ -394,20 +450,22 @@ function renderViewer(state: FilesState): void {
 function renderViewerContents(state: FilesState, res: FileResponse): void {
   if (!res || res.type !== 'file') {
     state.viewerBody?.replaceChildren(
-      el('div', { class: 'files-error' }, 'unexpected response'),
+      el('div', { class: 'files-error' }, 'Unexpected response'),
     );
     return;
   }
   const header = el('div', { class: 'files-viewer-meta' },
     el('span', { class: 'files-viewer-size' }, fmtSize(res.size)),
+    state.selectedFile ? downloadLink(state, state.selectedFile) : null,
   );
 
   if (res.truncated) {
     state.viewerBody?.replaceChildren(
       header,
       el('div', { class: 'files-placeholder' },
-        el('div', { class: 'files-placeholder-title' }, 'file too large to preview'),
+        el('div', { class: 'files-placeholder-title' }, 'File too large to preview'),
         el('div', { class: 'files-placeholder-sub' }, `${fmtSize(res.size)} exceeds the inline preview limit.`),
+        state.selectedFile ? downloadLink(state, state.selectedFile) : null,
       ),
     );
     return;
@@ -416,8 +474,9 @@ function renderViewerContents(state: FilesState, res: FileResponse): void {
     state.viewerBody?.replaceChildren(
       header,
       el('div', { class: 'files-placeholder' },
-        el('div', { class: 'files-placeholder-title' }, 'binary file'),
-        el('div', { class: 'files-placeholder-sub' }, `${fmtSize(res.size)} of binary data. preview not shown.`),
+        el('div', { class: 'files-placeholder-title' }, 'Binary file'),
+        el('div', { class: 'files-placeholder-sub' }, `${fmtSize(res.size)} of binary data. Preview not shown.`),
+        state.selectedFile ? downloadLink(state, state.selectedFile) : null,
       ),
     );
     return;
@@ -514,6 +573,118 @@ function openHtmlInNewTab(content: string): void {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     alert(`Could not open preview: ${msg}`);
+  }
+}
+
+
+function downloadLink(state: FilesState, filePath: string, label = 'Download'): HTMLElement {
+  return el('a', {
+    class: 'btn btn--ghost files-download',
+    href: api.fileRawUrl(state.agent.id, filePath, { download: true }),
+    download: basename(filePath),
+    title: 'Download this file',
+  }, label);
+}
+
+function bindDropTarget(state: FilesState, tree: HTMLElement): void {
+  const onDragOver = (ev: DragEvent): void => {
+    if (!ev.dataTransfer || ![...ev.dataTransfer.types].includes('Files')) return;
+    ev.preventDefault();
+    tree.classList.add('files-tree--drop');
+  };
+  const onDragLeave = (ev: DragEvent): void => {
+    if (ev.currentTarget === tree) tree.classList.remove('files-tree--drop');
+  };
+  const onDrop = (ev: DragEvent): void => {
+    ev.preventDefault();
+    tree.classList.remove('files-tree--drop');
+    const files = ev.dataTransfer && ev.dataTransfer.files;
+    if (files && files.length) void uploadFiles(state, files);
+  };
+  tree.addEventListener('dragover', onDragOver);
+  tree.addEventListener('dragleave', onDragLeave);
+  tree.addEventListener('drop', onDrop);
+}
+
+function setUploadProgress(state: FilesState, opts: {
+  name: string;
+  index: number;
+  count: number;
+  loaded: number;
+  total: number;
+} | null): void {
+  const root = state.progressRoot;
+  if (!root) return;
+  if (!opts) {
+    root.hidden = true;
+    if (state.progressBar) state.progressBar.style.width = '0%';
+    return;
+  }
+  root.hidden = false;
+  const total = opts.total > 0 ? opts.total : 0;
+  const pct = total > 0 ? Math.min(100, Math.round((opts.loaded / total) * 100)) : 0;
+  const prefix = opts.count > 1 ? `${opts.index + 1}/${opts.count} ` : '';
+  if (state.progressLabel) state.progressLabel.textContent = `Uploading ${prefix}${opts.name}`;
+  if (state.progressBar) state.progressBar.style.width = `${pct}%`;
+  if (state.progressMeta) {
+    state.progressMeta.textContent = total
+      ? `${fmtSize(opts.loaded)} / ${fmtSize(total)} (${pct}%)`
+      : fmtSize(opts.loaded);
+  }
+}
+
+async function uploadFiles(state: FilesState, list: FileList | File[]): Promise<void> {
+  const files = Array.from(list);
+  if (!files.length || !state.agent || !state.agent.id) return;
+  const max = (api as { FILE_UPLOAD_MAX_BYTES?: number }).FILE_UPLOAD_MAX_BYTES || (2 * 1024 * 1024 * 1024);
+  let ok = 0;
+  let failed = 0;
+  const errors: string[] = [];
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i]!;
+    if (file.size > max) {
+      failed += 1;
+      errors.push(`${file.name}: larger than ${fmtSize(max)}`);
+      continue;
+    }
+    setUploadProgress(state, {
+      name: file.name,
+      index: i,
+      count: files.length,
+      loaded: 0,
+      total: file.size,
+    });
+    try {
+      await api.uploadFile(state.agent.id, {
+        dir: state.currentPath || '',
+        name: file.name,
+        file,
+        onProgress: (loaded, total) => {
+          if (state.destroyed) return;
+          setUploadProgress(state, {
+            name: file.name,
+            index: i,
+            count: files.length,
+            loaded,
+            total: total || file.size,
+          });
+        },
+      });
+      ok += 1;
+    } catch (e) {
+      failed += 1;
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`${file.name}: ${msg}`);
+      console.warn('upload failed', file.name, e);
+    }
+  }
+  setUploadProgress(state, null);
+  if (!state.destroyed) await loadDir(state, state.currentPath);
+  if (failed) {
+    const detail = errors.join('\n');
+    alert(ok
+      ? ('Uploaded ' + ok + ' file' + (ok === 1 ? '' : 's') + '. ' + failed + ' failed.\n' + detail)
+      : ('Upload failed.\n' + detail));
   }
 }
 

@@ -1,6 +1,6 @@
 // Settings view.
 
-import { api } from '../lib/api.js';
+import { api, parseModelsPayload } from '../lib/api.js';
 import { el } from '../lib/render.js';
 import { iconHtml } from '../lib/icons.js';
 import { THEMES, getTheme, setTheme } from '../lib/themes.js';
@@ -19,6 +19,8 @@ interface SettingsSnapshot {
   debug?: boolean;
   retentionDays?: number;
   theme?: string;
+  defaultContextWindow?: number;
+  defaultCompactAtPercent?: number;
 }
 
 interface PageModule {
@@ -45,6 +47,8 @@ export class SettingsView {
   autoApprove!: HTMLInputElement;
   debugToggle!: HTMLInputElement;
   retentionInput!: HTMLInputElement;
+  contextWindowInput!: HTMLInputElement;
+  compactPercentInput!: HTMLInputElement;
   themePicker!: HTMLElement;
   statusEl!: HTMLElement;
   saveBtn!: HTMLButtonElement;
@@ -92,7 +96,7 @@ export class SettingsView {
   }
 
   private _buildSubnav(): HTMLElement {
-    const nav = el('nav', { class: 'settings-subnav', 'aria-label': 'settings sections' }) as HTMLElement;
+    const nav = el('nav', { class: 'settings-subnav', 'aria-label': 'Settings sections' }) as HTMLElement;
     for (const section of SETTINGS_SECTIONS) {
       nav.appendChild(el('div', { class: 'settings-subnav__section-title' }, section.title));
       const list = el('ul', { class: 'settings-subnav__list' });
@@ -134,7 +138,7 @@ export class SettingsView {
     const mod: PageModule | undefined = (page && (page as { module?: PageModule }).module) || undefined;
     if (!page || !mod || typeof mod.mount !== 'function') {
       this.contentHost.appendChild(
-        el('div', { class: 'pane-empty' }, `no view for "${this._activeArea}"`),
+        el('div', { class: 'pane-empty' }, `No view for "${this._activeArea}"`),
       );
       return;
     }
@@ -159,42 +163,52 @@ export class SettingsView {
     this.retentionInput = el('input', {
       class: 'inp inp--num', type: 'number', min: '0', max: '3650', step: '1', placeholder: '30',
     }) as HTMLInputElement;
+    this.contextWindowInput = el('input', {
+      class: 'inp inp--num', type: 'number', min: '1000', step: '1000', placeholder: '500000',
+    }) as HTMLInputElement;
+    this.compactPercentInput = el('input', {
+      class: 'inp inp--num', type: 'number', min: '1', max: '100', step: '1', placeholder: '80',
+    }) as HTMLInputElement;
     this.themePicker = this._buildThemePicker();
     this.statusEl = el('div', { class: 'settings-status' }) as HTMLElement;
 
     this.saveBtn = el('button', {
       class: 'btn btn--primary',
       onclick: (ev: MouseEvent) => { ev.preventDefault(); void this.save(); },
-    }, 'save') as HTMLButtonElement;
+    }, 'Save') as HTMLButtonElement;
     this.reloadBtn = el('button', {
       class: 'btn btn--ghost',
       onclick: (ev: MouseEvent) => { ev.preventDefault(); void this.load(); },
-    }, 'reload') as HTMLButtonElement;
+    }, 'Reload') as HTMLButtonElement;
 
     this.modelFieldHost = el('div', { class: 'field-host' }, this.modelInput) as HTMLElement;
   }
 
   private _buildGeneralFormRoot(): HTMLElement {
     return el('section', { class: 'settings' },
-      el('h2', { class: 'settings-title' }, 'general'),
+      el('h2', { class: 'settings-title' }, 'General'),
       this.statusEl,
 
-      this.field('default model', this.modelFieldHost,
-        'used when you spawn a new agent without specifying one.'),
-      this.field('default cwd', this.cwdInput,
-        'fallback working directory for new agents.'),
-      this.field('auto-approve tools',
+      this.field('Default model', this.modelFieldHost,
+        'Used when you spawn a new agent without specifying one.'),
+      this.field('Default cwd', this.cwdInput,
+        'Fallback working directory for new agents.'),
+      this.field('Auto-approve tools',
         el('label', { class: 'toggle' }, this.autoApprove,
-          el('span', { class: 'toggle-text' }, 'on')),
-        'server already passes --always-approve. shown here for visibility.'),
-      this.field('debug controls',
+          el('span', { class: 'toggle-text' }, 'On')),
+        'Server already passes --always-approve. Shown here for visibility.'),
+      this.field('Debug controls',
         el('label', { class: 'toggle' }, this.debugToggle,
-          el('span', { class: 'toggle-text' }, 'show developer affordances')),
-        'shows the { payload } button in the composer to inspect the exact JSON sent to the agent.'),
-      this.field('history retention (days)', this.retentionInput,
-        'agent history under ~/.grok-remote/agents/ is pruned when last activity exceeds this. starred agents are never pruned. 0 disables cleanup. default 30.'),
-      this.field('theme', this.themePicker,
-        'applies instantly. saved in this browser only.'),
+          el('span', { class: 'toggle-text' }, 'Show developer affordances')),
+        'Shows the { payload } button in the composer to inspect the exact JSON sent to the agent.'),
+      this.field('History retention (days)', this.retentionInput,
+        'Agent history under ~/.grok-remote/agents/ is pruned when last activity exceeds this. Starred agents are never pruned. 0 disables cleanup. Default 30.'),
+      this.field('Default context window', this.contextWindowInput,
+        'Token window used by the occupancy bar and UI auto-compact. grok-4.6 is 500000. Leave empty to use the model catalog.'),
+      this.field('Auto-compact at %', this.compactPercentInput,
+        'UI auto-compact line as a percent of the window. grok-4.6 engine compact is 80. Leave empty to use the model catalog.'),
+      this.field('Theme', this.themePicker,
+        'Applies instantly. Saved in this browser only.'),
 
       el('div', { class: 'settings-actions' }, this.saveBtn, this.reloadBtn),
     ) as HTMLElement;
@@ -218,7 +232,7 @@ export class SettingsView {
   }
 
   async load(): Promise<void> {
-    this.setStatus('loading...', 'idle');
+    this.setStatus('Loading…', 'idle');
     try {
       const [settings, modelsResp] = await Promise.allSettled([
         api.getSettings(),
@@ -232,24 +246,24 @@ export class SettingsView {
         this.debugToggle.checked = !!this.settings.debug;
         const rd = (this.settings.retentionDays != null) ? Number(this.settings.retentionDays) : 30;
         this.retentionInput.value = Number.isFinite(rd) ? String(Math.max(0, Math.min(3650, rd))) : '30';
+        const cw = Number(this.settings.defaultContextWindow);
+        this.contextWindowInput.value = Number.isFinite(cw) && cw > 0 ? String(Math.floor(cw)) : '';
+        const pct = Number(this.settings.defaultCompactAtPercent);
+        this.compactPercentInput.value = Number.isFinite(pct) && pct > 0 ? String(Math.floor(pct)) : '';
       } else {
-        this.setStatus('settings unreachable · using defaults', 'warn');
+        this.setStatus('Settings unreachable · using defaults', 'warn');
       }
 
       let models: unknown[] = [];
       if (modelsResp.status === 'fulfilled' && modelsResp.value) {
-        const m = modelsResp.value as unknown;
-        if (Array.isArray(m)) models = m;
-        else if (m && typeof m === 'object' && Array.isArray((m as { models?: unknown[] }).models)) {
-          models = (m as { models: unknown[] }).models;
-        }
+        models = parseModelsPayload(modelsResp.value);
       }
       this.models = models;
       this.swapModelField();
-      if (settings.status === 'fulfilled') this.setStatus('loaded', 'ok');
+      if (settings.status === 'fulfilled') this.setStatus('Loaded', 'ok');
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      this.setStatus(`load failed: ${msg}`, 'fail');
+      this.setStatus(`Load failed: ${msg}`, 'fail');
     }
   }
 
@@ -271,7 +285,7 @@ export class SettingsView {
         sel.appendChild(opt);
       }
       const customRow = el('div', { class: 'model-custom' },
-        el('span', { class: 'model-custom-label' }, 'or custom:'),
+        el('span', { class: 'model-custom-label' }, 'Or custom:'),
         this.modelInput,
       );
       this.modelSelect = sel;
@@ -282,6 +296,8 @@ export class SettingsView {
   }
 
   async save(): Promise<void> {
+    const cwRaw = this.contextWindowInput.value.trim();
+    const pctRaw = this.compactPercentInput.value.trim();
     const body = {
       defaultModel: this.modelSelect && this.modelSelect.value
         ? this.modelSelect.value
@@ -290,20 +306,22 @@ export class SettingsView {
       autoApprove:  !!this.autoApprove.checked,
       debug:        !!this.debugToggle.checked,
       retentionDays: clampInt(this.retentionInput.value, 0, 3650, 30),
+      defaultContextWindow: cwRaw ? clampInt(cwRaw, 1000, 10_000_000, 500000) : null,
+      defaultCompactAtPercent: pctRaw ? clampInt(pctRaw, 1, 100, 80) : null,
       theme:        getTheme(),
     };
     this.saveBtn.disabled = true;
-    this.setStatus('saving...', 'idle');
+    this.setStatus('Saving…', 'idle');
     try {
       const updated = await api.patchSettings(body);
       this.settings = (updated || body) as SettingsSnapshot;
-      this.setStatus('saved', 'ok');
+      this.setStatus('Saved', 'ok');
       window.dispatchEvent(new CustomEvent('grok-remote:settings-change', {
         detail: this.settings,
       }));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      this.setStatus(`save failed: ${msg}`, 'fail');
+      this.setStatus(`Save failed: ${msg}`, 'fail');
     } finally {
       this.saveBtn.disabled = false;
     }

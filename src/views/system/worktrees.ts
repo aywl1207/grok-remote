@@ -94,11 +94,11 @@ function render(): void {
       <h2 class="system-page-title">Worktrees</h2>
       <p class="system-page-sub">
         Manage git worktrees created with <code>grok -w</code>. Switch to the
-        db tab to inspect or rebuild grok's local index.
+        DB tab to inspect or rebuild grok's local index.
       </p>
       <nav class="worktrees-tabs">
-        <button class="worktrees-tab" data-tab="list">list</button>
-        <button class="worktrees-tab" data-tab="db">db</button>
+        <button class="worktrees-tab" data-tab="list">List</button>
+        <button class="worktrees-tab" data-tab="db">DB</button>
       </nav>
       <div class="worktrees-body" data-role="body"></div>
     </section>
@@ -134,19 +134,19 @@ function renderListTab(): string {
   return `
     <div class="worktrees-filters">
       <label class="worktrees-inline">
-        repo
+        Repo
         <input class="worktrees-input" type="text" data-filter="repo" value="${escapeHtml(f.repo)}" placeholder="/path/to/repo">
       </label>
       <label class="worktrees-inline">
-        type
-        <input class="worktrees-input" type="text" data-filter="type" value="${escapeHtml(f.type)}" placeholder="fork, scratch...">
+        Type
+        <input class="worktrees-input" type="text" data-filter="type" value="${escapeHtml(f.type)}" placeholder="Fork, scratch…">
       </label>
       <label class="worktrees-inline">
         <input type="checkbox" data-filter="all" ${f.all ? 'checked' : ''}>
-        include stale
+        Include stale
       </label>
-      <button class="worktrees-btn" data-act="refresh">refresh</button>
-      <button class="worktrees-btn" data-act="toggle-gc">${state.gc.open ? 'hide gc' : 'gc'}</button>
+      <button class="worktrees-btn" data-act="refresh">Refresh</button>
+      <button class="worktrees-btn" data-act="toggle-gc">${state.gc.open ? 'Hide GC' : 'GC'}</button>
     </div>
     ${state.gc.open ? renderGcForm() : ''}
     <div class="worktrees-status" data-role="status">${renderStatusText()}</div>
@@ -155,7 +155,7 @@ function renderListTab(): string {
 }
 
 function renderStatusText(): string {
-  if (state.loading) return '<span class="worktrees-status--loading">loading...</span>';
+  if (state.loading) return '<span class="worktrees-status--loading">Loading…</span>';
   if (state.error)   return `<span class="worktrees-status--error">${escapeHtml(state.error)}</span>`;
   return '';
 }
@@ -164,7 +164,7 @@ function renderTable(): string {
   if (!state.worktrees.length && !state.loading) {
     return `<div class="worktrees-empty">No worktrees.</div>`;
   }
-  const headers = ['id', 'repo', 'branch', 'age', ''];
+  const headers = ['ID', 'Repo', 'Branch', 'Age', ''];
   const rows = state.worktrees.map(wt => renderWtRow(wt)).join('');
   return `
     <table class="worktrees-table">
@@ -188,8 +188,8 @@ function renderWtRow(wt: Worktree): string {
     <tr data-id="${escapeHtml(id)}" class="worktrees-row ${open ? 'worktrees-row--open' : ''}">
       ${cells.map(c => `<td>${escapeHtml(String(c))}</td>`).join('')}
       <td class="worktrees-row-actions">
-        <button class="worktrees-btn worktrees-btn--small" data-act="show">${r.showOpen ? 'hide' : 'show'}</button>
-        <button class="worktrees-btn worktrees-btn--small worktrees-btn--danger" data-act="rm">${r.rmConfirm ? 'cancel' : 'rm'}</button>
+        <button class="worktrees-btn worktrees-btn--small" data-act="show">${r.showOpen ? 'Hide' : 'Show'}</button>
+        <button class="worktrees-btn worktrees-btn--small worktrees-btn--danger" data-act="rm">${r.rmConfirm ? 'Cancel' : 'Remove'}</button>
       </td>
     </tr>
   `;
@@ -207,36 +207,36 @@ function renderWtRow(wt: Worktree): string {
 function renderShowSection(r: RowState): string {
   if (r.showErr) {
     return `<div class="worktrees-detail-section">
-      <div class="worktrees-detail-title">show</div>
+      <div class="worktrees-detail-title">Show</div>
       <div class="worktrees-error">${escapeHtml(r.showErr)}</div>
     </div>`;
   }
   if (r.showText == null) {
     return `<div class="worktrees-detail-section">
-      <div class="worktrees-detail-title">show</div>
-      <div class="worktrees-muted">loading...</div>
+      <div class="worktrees-detail-title">Show</div>
+      <div class="worktrees-muted">Loading…</div>
     </div>`;
   }
   return `<div class="worktrees-detail-section">
-    <div class="worktrees-detail-title">show</div>
+    <div class="worktrees-detail-title">Show</div>
     <pre class="worktrees-pre">${escapeHtml(r.showText)}</pre>
   </div>`;
 }
 
 function renderRmSection(_id: string, r: RowState): string {
   return `<div class="worktrees-detail-section">
-    <div class="worktrees-detail-title">remove worktree</div>
+    <div class="worktrees-detail-title">Remove Worktree</div>
     <div class="worktrees-rm-row">
       <label class="worktrees-inline">
         <input type="checkbox" data-rm-input="force" ${r.rmForce ? 'checked' : ''}>
-        force (allow uncommitted changes)
+        Force (remove even if the worktree is in use or has uncommitted changes)
       </label>
       <label class="worktrees-inline">
         <input type="checkbox" data-rm-input="dryRun" ${r.rmDryRun ? 'checked' : ''}>
-        dry run
+        Dry run
       </label>
       <button class="worktrees-btn worktrees-btn--small worktrees-btn--danger" data-act="rm-confirm" ${r.busy ? 'disabled' : ''}>
-        ${r.busy ? 'working...' : 'confirm remove'}
+        ${r.busy ? 'Working…' : 'Confirm Remove'}
       </button>
     </div>
     ${r.rmErr ? `<div class="worktrees-error">${escapeHtml(r.rmErr)}</div>` : ''}
@@ -248,22 +248,22 @@ function renderGcForm(): string {
   const g = state.gc;
   return `
     <div class="worktrees-gc">
-      <div class="worktrees-detail-title">garbage collect</div>
+      <div class="worktrees-detail-title">Garbage Collect</div>
       <div class="worktrees-gc-row">
         <label class="worktrees-inline">
           <input type="checkbox" data-gc-input="dryRun" ${g.dryRun ? 'checked' : ''}>
-          dry run
+          Dry run
         </label>
         <label class="worktrees-inline">
-          max age
+          Max age
           <input class="worktrees-input worktrees-input--small" type="text" data-gc-input="maxAge" value="${escapeHtml(g.maxAge)}" placeholder="7d, 48h">
         </label>
         <label class="worktrees-inline">
           <input type="checkbox" data-gc-input="force" ${g.force ? 'checked' : ''}>
-          force
+          Force
         </label>
         <button class="worktrees-btn" data-act="gc-run" ${g.busy ? 'disabled' : ''}>
-          ${g.busy ? 'working...' : 'run'}
+          ${g.busy ? 'Working…' : 'Run'}
         </button>
       </div>
       ${g.error  ? `<div class="worktrees-error">${escapeHtml(g.error)}</div>` : ''}
@@ -334,16 +334,16 @@ function renderDbTab(): string {
   return `
     <div class="worktrees-db">
       <div class="worktrees-db-row">
-        <button class="worktrees-btn" data-act="db-stats" ${d.busy ? 'disabled' : ''}>stats</button>
-        <button class="worktrees-btn" data-act="db-path"  ${d.busy ? 'disabled' : ''}>path</button>
-        <button class="worktrees-btn worktrees-btn--danger" data-act="db-rebuild" ${d.busy ? 'disabled' : ''}>rebuild</button>
+        <button class="worktrees-btn" data-act="db-stats" ${d.busy ? 'disabled' : ''}>Stats</button>
+        <button class="worktrees-btn" data-act="db-path"  ${d.busy ? 'disabled' : ''}>Path</button>
+        <button class="worktrees-btn worktrees-btn--danger" data-act="db-rebuild" ${d.busy ? 'disabled' : ''}>Rebuild</button>
       </div>
-      ${d.statsErr   ? `<div class="worktrees-error">stats: ${escapeHtml(d.statsErr)}</div>`     : ''}
-      ${d.statsText  ? `<div class="worktrees-detail-title">stats</div><pre class="worktrees-pre">${escapeHtml(d.statsText)}</pre>` : ''}
-      ${d.pathErr    ? `<div class="worktrees-error">path: ${escapeHtml(d.pathErr)}</div>`       : ''}
-      ${d.pathText   ? `<div class="worktrees-detail-title">path</div><pre class="worktrees-pre">${escapeHtml(d.pathText)}</pre>`   : ''}
-      ${d.rebuildErr ? `<div class="worktrees-error">rebuild: ${escapeHtml(d.rebuildErr)}</div>` : ''}
-      ${d.rebuildText? `<div class="worktrees-detail-title">rebuild</div><pre class="worktrees-pre">${escapeHtml(d.rebuildText)}</pre>` : ''}
+      ${d.statsErr   ? `<div class="worktrees-error">Stats: ${escapeHtml(d.statsErr)}</div>`     : ''}
+      ${d.statsText  ? `<div class="worktrees-detail-title">Stats</div><pre class="worktrees-pre">${escapeHtml(d.statsText)}</pre>` : ''}
+      ${d.pathErr    ? `<div class="worktrees-error">Path: ${escapeHtml(d.pathErr)}</div>`       : ''}
+      ${d.pathText   ? `<div class="worktrees-detail-title">Path</div><pre class="worktrees-pre">${escapeHtml(d.pathText)}</pre>`   : ''}
+      ${d.rebuildErr ? `<div class="worktrees-error">Rebuild: ${escapeHtml(d.rebuildErr)}</div>` : ''}
+      ${d.rebuildText? `<div class="worktrees-detail-title">Rebuild</div><pre class="worktrees-pre">${escapeHtml(d.rebuildText)}</pre>` : ''}
     </div>
   `;
 }
@@ -427,7 +427,7 @@ async function doRm(id: string): Promise<void> {
 
 async function runGc(): Promise<void> {
   const g = state.gc;
-  if (!confirm(`Run grok worktree gc${g.dryRun ? ' (dry run)' : ''}?`)) return;
+  if (!confirm(`Run grok worktree gc${g.dryRun ? ' (Dry run)' : ''}?`)) return;
   g.busy = true;
   g.error = null;
   g.output = null;
@@ -451,7 +451,7 @@ async function runGc(): Promise<void> {
 async function doDbStats(): Promise<void> {
   state.db.busy = true;
   state.db.statsErr = null;
-  state.db.statsText = 'loading...';
+  state.db.statsText = 'Loading…';
   renderBody();
   try {
     const resp = await api.worktrees.dbStats() as { output?: string } | undefined;
@@ -468,7 +468,7 @@ async function doDbStats(): Promise<void> {
 async function doDbPath(): Promise<void> {
   state.db.busy = true;
   state.db.pathErr = null;
-  state.db.pathText = 'loading...';
+  state.db.pathText = 'Loading…';
   renderBody();
   try {
     const resp = await api.worktrees.dbPath() as { output?: string } | undefined;

@@ -275,7 +275,7 @@ function AgentNode({ data }) {
         <span className="flow-agent-node__name" title={data.name}>{data.name}</span>
       </div>
       <div className="flow-agent-node__row flow-agent-node__row--meta">
-        <span className="flow-agent-node__model" title={data.model}>{data.model || 'no model'}</span>
+        <span className="flow-agent-node__model" title={data.model}>{data.model || 'No model'}</span>
         <span className={`flow-agent-node__pill flow-agent-node__pill--${status}`}>{status}</span>
       </div>
       <div className="flow-agent-node__row flow-agent-node__row--meta">
@@ -327,14 +327,14 @@ function ToolNode({ data }) {
         <span className="flow-tool-node__label">{data.label || ''}</span>
         <span className="flow-tool-node__meta">
           {showDur && <span className="flow-tool-node__dur">{showDur}</span>}
-          <span className={`flow-tool-node__status flow-tool-node__status--${status}`}>{data.status || 'pending'}</span>
+          <span className={`flow-tool-node__status flow-tool-node__status--${status}`}>{data.status || 'Pending'}</span>
         </span>
       </button>
       {open && (
         <div className="flow-tool-node__body">
           {Array.isArray(data.locations) && data.locations.length > 0 && (
             <div className="flow-tool-node__section">
-              <div className="flow-tool-node__section-title">locations</div>
+              <div className="flow-tool-node__section-title">Locations</div>
               <ul className="flow-tool-node__locs">
                 {data.locations.map((l, i) => (
                   <li key={i}>{(l && (l.path || l.uri || l.file)) || JSON.stringify(l)}</li>
@@ -344,19 +344,19 @@ function ToolNode({ data }) {
           )}
           {hasInput && (
             <div className="flow-tool-node__section">
-              <div className="flow-tool-node__section-title">input</div>
+              <div className="flow-tool-node__section-title">Input</div>
               <pre className="flow-tool-node__pre">{safeStringify(data.rawInput)}</pre>
             </div>
           )}
           {hasOutput && (
             <div className="flow-tool-node__section">
-              <div className="flow-tool-node__section-title">output</div>
+              <div className="flow-tool-node__section-title">Output</div>
               <pre className="flow-tool-node__pre">{outputText}</pre>
             </div>
           )}
           {data.rawOutput != null && (
             <div className="flow-tool-node__section">
-              <div className="flow-tool-node__section-title">rawOutput</div>
+              <div className="flow-tool-node__section-title">Raw output</div>
               <pre className="flow-tool-node__pre">{safeStringify(data.rawOutput)}</pre>
             </div>
           )}
@@ -377,7 +377,7 @@ function GroupNode({ data }) {
     <div
       className={`flow-group-node${data.expanded ? ' flow-group-node--open' : ''}${hasFailed ? ' flow-group-node--has-fail' : ''}`}
       onClick={() => { if (data.onToggle) data.onToggle(); }}
-      title={`${data.count} ${data.kind} calls. click to ${data.expanded ? 'collapse' : 'expand'}`}
+      title={`${data.count} ${data.kind} calls. Click to ${data.expanded ? 'collapse' : 'expand'}`}
     >
       <Handle type="target" position={Position.Left} className="flow-handle" />
       <Handle type="source" position={Position.Left} className="flow-handle" />
@@ -411,8 +411,8 @@ function BgTaskNode({ data }) {
       <Handle type="target" id="bg" position={Position.Top} className="flow-handle" />
       <div className="flow-bg-node__head">
         <span className={`flow-bg-node__dot${exited ? ' flow-bg-node__dot--exited' : ''}`} />
-        <span className="flow-bg-node__kind">{exited ? 'bg done' : 'bg shell'}</span>
-        <span className="flow-bg-node__elapsed" title={`started ${new Date(data.startedAt || 0).toLocaleTimeString()}`}>
+        <span className="flow-bg-node__kind">{exited ? 'Bg done' : 'Bg shell'}</span>
+        <span className="flow-bg-node__elapsed" title={`Started ${new Date(data.startedAt || 0).toLocaleTimeString()}`}>
           {elapsed > 0 ? fmtDuration(elapsed) : ''}
         </span>
       </div>
@@ -425,14 +425,14 @@ function BgTaskNode({ data }) {
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            title={`open ${data.url}`}
+            title={`Open ${data.url}`}
           >open {data.url.replace(/^https?:\/\//, '')}</a>
         ) : (exited ? (
           <span className="flow-bg-node__exit">
             exit {code != null ? code : '?'}
           </span>
         ) : (
-          <span className="flow-bg-node__pending">no URL yet</span>
+          <span className="flow-bg-node__pending">No URL yet</span>
         ))}
       </div>
     </div>
@@ -494,7 +494,7 @@ function SubAgentNode({ data }) {
       {/* Left handle: source for edges to child tool-call nodes that hang
           off this sub-agent's left side when expanded. */}
       <Handle type="source" id="children" position={Position.Left} className="flow-handle" />
-      <div className="flow-subagent-node__crumb" title={`parent: ${data.parentName || ''}`}>
+      <div className="flow-subagent-node__crumb" title={`Parent: ${data.parentName || ''}`}>
         parent: <span className="flow-subagent-node__crumb-name">{data.parentName || 'agent'}</span>
       </div>
       <button
@@ -512,19 +512,19 @@ function SubAgentNode({ data }) {
         </span>
         {showDur && <span className="flow-subagent-node__dur">{showDur}</span>}
         {data.childStatus === 'loading' && (
-          <span className="flow-subagent-node__childinfo" title="fetching child trace">
+          <span className="flow-subagent-node__childinfo" title="Fetching child trace">
             loading child events...
           </span>
         )}
         {data.childStatus === 'loaded' && typeof data.childCount === 'number' && data.childCount > 0 && (
-          <span className="flow-subagent-node__childinfo" title="child tool calls fetched">
+          <span className="flow-subagent-node__childinfo" title="Child tool calls fetched">
             {data.childCount} child call{data.childCount === 1 ? '' : 's'}
           </span>
         )}
         {data.childStatus === 'error' && (
           <span
             className="flow-subagent-node__childinfo flow-subagent-node__childinfo--err"
-            title={data.childError || 'failed to load child trace'}
+            title={data.childError || 'Failed to load child trace'}
           >
             child trace failed
           </span>
@@ -539,19 +539,19 @@ function SubAgentNode({ data }) {
         <div className="flow-subagent-node__body">
           {promptText && (
             <div className="flow-subagent-node__section">
-              <div className="flow-subagent-node__section-title">prompt</div>
+              <div className="flow-subagent-node__section-title">Prompt</div>
               <pre className="flow-subagent-node__pre">{promptText}</pre>
             </div>
           )}
           {responseText && (
             <div className="flow-subagent-node__section">
-              <div className="flow-subagent-node__section-title">{isSubagentFinal ? 'final output' : 'response'}</div>
+              <div className="flow-subagent-node__section-title">{isSubagentFinal ? 'Final output' : 'Response'}</div>
               <pre className="flow-subagent-node__pre">{responseText}</pre>
             </div>
           )}
           {isSubagentFinal && (
             <div className="flow-subagent-node__section">
-              <div className="flow-subagent-node__section-title">stats</div>
+              <div className="flow-subagent-node__section-title">Stats</div>
               <div className="flow-subagent-node__stats">
                 {typeof ro.tool_calls === 'number' && <span>{ro.tool_calls} tool call{ro.tool_calls === 1 ? '' : 's'}</span>}
                 {typeof ro.turns === 'number' && <span>{ro.turns} turn{ro.turns === 1 ? '' : 's'}</span>}
@@ -705,7 +705,7 @@ function applyAgentEventToState(cur, name, payload, opts) {
           ms.push({
             kind: 'sub-agent-spawn',
             icon: 'S',
-            label: `turn ${turn}: 1 sub-agent spawned`,
+            label: `Turn ${turn}: 1 sub-agent spawned`,
             t: at,
             _turn: turn,
             _count: 1,
@@ -715,7 +715,7 @@ function applyAgentEventToState(cur, name, payload, opts) {
           const count = (prev._count || 1) + 1;
           ms[spawnIdx] = {
             ...prev,
-            label: `turn ${turn}: ${count} sub-agents spawned`,
+            label: `Turn ${turn}: ${count} sub-agents spawned`,
             _count: count,
             t: prev.t, // keep the original spawn time for chronological order
           };
@@ -725,7 +725,7 @@ function applyAgentEventToState(cur, name, payload, opts) {
         if (!next._turnHasMilestone) {
           const nTurn = (next.turn || 0) + 1;
           const ms2 = (next.milestones || []).slice();
-          ms2.push({ kind: 'turn', icon: 'T', label: `turn ${nTurn}`, t: at });
+          ms2.push({ kind: 'turn', icon: 'T', label: `Turn ${nTurn}`, t: at });
           if (ms2.length > MILESTONE_CAP) ms2.splice(0, ms2.length - MILESTONE_CAP);
           next = { ...next, turn: nTurn, milestones: ms2, _turnHasMilestone: true };
         }
@@ -750,7 +750,7 @@ function applyAgentEventToState(cur, name, payload, opts) {
       if (!next._turnHasMilestone) {
         const nTurn = (next.turn || 0) + 1;
         const ms2 = (next.milestones || []).slice();
-        ms2.push({ kind: 'turn', icon: 'T', label: `turn ${nTurn}`, t: at });
+        ms2.push({ kind: 'turn', icon: 'T', label: `Turn ${nTurn}`, t: at });
         if (ms2.length > MILESTONE_CAP) ms2.splice(0, ms2.length - MILESTONE_CAP);
         next = { ...next, turn: nTurn, milestones: ms2, _turnHasMilestone: true };
       }
@@ -917,7 +917,7 @@ function applyAgentEventToState(cur, name, payload, opts) {
       const turn = next.turn || 0;
       let ms = (next.milestones || []).slice();
       if (turn > 0) {
-        ms.push({ kind: 'turn-end', icon: 'D', label: `turn ${turn} done`, t: at });
+        ms.push({ kind: 'turn-end', icon: 'D', label: `Turn ${turn} done`, t: at });
         if (ms.length > MILESTONE_CAP) ms = ms.slice(ms.length - MILESTONE_CAP);
       }
       return { ...next, status: 'idle', milestones: ms, _turnHasMilestone: false, lastActivityAt: at };
@@ -930,7 +930,7 @@ function applyAgentEventToState(cur, name, payload, opts) {
       const cmd = u.command || u.cmd || '';
       const ms = (cur.milestones || []).slice();
       const last = ms[ms.length - 1];
-      const m = { kind: 'bg-start', icon: 'U', label: `started ${truncCmd(cmd)}`, t: at };
+      const m = { kind: 'bg-start', icon: 'U', label: `Started ${truncCmd(cmd)}`, t: at };
       if (last && last.kind === m.kind && last.label === m.label && (m.t - last.t) < 1000) return cur;
       ms.push(m);
       if (ms.length > MILESTONE_CAP) ms.splice(0, ms.length - MILESTONE_CAP);
@@ -945,7 +945,7 @@ function applyAgentEventToState(cur, name, payload, opts) {
       const cmd = snap.command || u.command || '';
       const ms = (cur.milestones || []).slice();
       const last = ms[ms.length - 1];
-      const m = { kind: 'bg-end', icon: 'V', label: `finished ${truncCmd(cmd)}`, t: at };
+      const m = { kind: 'bg-end', icon: 'V', label: `Finished ${truncCmd(cmd)}`, t: at };
       if (last && last.kind === m.kind && last.label === m.label && (m.t - last.t) < 1000) return cur;
       ms.push(m);
       if (ms.length > MILESTONE_CAP) ms.splice(0, ms.length - MILESTONE_CAP);
@@ -1456,7 +1456,7 @@ function FlowInner({ filterIds = null }) {
             status: 'error',
             calls: (prev[key] && prev[key].calls) || [],
             sessionId,
-            error: errMsg || 'fetch failed',
+            error: errMsg || 'Fetch failed',
             fetchedAt: Date.now(),
           },
         }));
@@ -1511,7 +1511,7 @@ function FlowInner({ filterIds = null }) {
         st.stopped = true;
         subChildInFlightRef.current.delete(key);
       }).catch((err) => {
-        const msg = (err && err.message) || 'fetch failed';
+        const msg = (err && err.message) || 'Fetch failed';
         subChildInFlightRef.current.delete(key);
         scheduleRetry(msg);
       });
@@ -2154,32 +2154,32 @@ function FlowInner({ filterIds = null }) {
     <section className={`system-page system-page--flow${scoped ? ' system-page--flow-scoped' : ''}`}>
       <div className="flow-toolbar">
         {scoped
-          ? <h2 className="system-page-title flow-toolbar__title">Conversation flow</h2>
-          : <h2 className="system-page-title flow-toolbar__title">{hasFilter ? 'All conversations' : 'Live agent flow'}</h2>}
+          ? <h2 className="system-page-title flow-toolbar__title">Conversation Flow</h2>
+          : <h2 className="system-page-title flow-toolbar__title">{hasFilter ? 'All Conversations' : 'Live Agent Flow'}</h2>}
         <div className="flow-toolbar__spacer" />
-        <button type="button" className="flow-toolbar__btn" onClick={refresh}>refresh</button>
-        <button type="button" className="flow-toolbar__btn" onClick={handleFit}>fit view</button>
+        <button type="button" className="flow-toolbar__btn" onClick={refresh}>Refresh</button>
+        <button type="button" className="flow-toolbar__btn" onClick={handleFit}>Fit View</button>
         <button
           type="button"
           className="flow-toolbar__btn"
           onClick={resetLayout}
-          title="snap every node back to the auto-computed position"
+          title="Snap every node back to the auto-computed position"
           disabled={Object.keys(userPositions).length === 0}
-        >reset layout</button>
+        >Reset Layout</button>
         <button
           type="button"
           className={`flow-toolbar__btn${statsOpen ? ' flow-toolbar__btn--on' : ''}`}
           onClick={toggleStats}
-          title="toggle stats panel"
+          title="Toggle stats panel"
         >
-          stats
+          Stats
         </button>
         <button
           type="button"
           className={`flow-toolbar__gear topbar-icon-btn${settingsOpen ? ' flow-toolbar__gear--on' : ''}`}
           onClick={() => setSettingsOpen(v => !v)}
-          title="flow settings"
-          aria-label="flow settings"
+          title="Flow Settings"
+          aria-label="Flow Settings"
           aria-pressed={settingsOpen}
           dangerouslySetInnerHTML={{ __html: iconHtml('settings') }}
         />
@@ -2188,9 +2188,9 @@ function FlowInner({ filterIds = null }) {
             type="button"
             className={`flow-toolbar__btn${showAll ? ' flow-toolbar__btn--on' : ''}`}
             onClick={() => setShowAll(v => !v)}
-            title={showAll ? 'show only this conversation' : 'show every running agent'}
+            title={showAll ? 'Show only this conversation' : 'Show every running agent'}
           >
-            {showAll ? 'just this' : 'show all'}
+            {showAll ? 'Just This' : 'Show All'}
           </button>
         )}
         {!scoped && !hasFilter && (
@@ -2200,14 +2200,14 @@ function FlowInner({ filterIds = null }) {
               checked={showArchived}
               onChange={(ev) => setShowArchived(ev.target.checked)}
             />
-            <span>show archived</span>
+            <span>Show Archived</span>
           </label>
         )}
         <span className="flow-toolbar__count">{agents.length} agent{agents.length === 1 ? '' : 's'}</span>
       </div>
       <div className="flow-canvas">
         {agents.length === 0 ? (
-          <div className="flow-empty">no agents yet. spawn one from the conversations view.</div>
+          <div className="flow-empty">No agents yet. Spawn one from the Conversations view.</div>
         ) : (
           <>
             <ReactFlow
@@ -2501,35 +2501,35 @@ function FlowStatsPanel({ agents, agentState, subagentChildren, onClose, tick })
   const maxBar = bars.reduce((m, [, v]) => Math.max(m, v), 1);
 
   return (
-    <aside className="flow-stats" role="complementary" aria-label="flow stats">
+    <aside className="flow-stats" role="complementary" aria-label="Flow stats">
       <header className="flow-stats__head">
-        <h3 className="flow-stats__title">stats</h3>
+        <h3 className="flow-stats__title">Stats</h3>
         <button
           type="button"
           className="flow-stats__close"
           onClick={onClose}
-          title="close stats panel"
+          title="Close stats panel"
         >x</button>
       </header>
 
       <section className="flow-stats__section">
-        <div className="flow-stats__section-title">tokens over time</div>
+        <div className="flow-stats__section-title">Tokens over time</div>
         {tokSpark ? (
           <svg className="flow-stats__chart" viewBox="0 0 280 70" preserveAspectRatio="none">
             <path d={tokSpark.area} fill="rgba(94, 234, 212, 0.15)" />
             <path d={tokSpark.line} fill="none" stroke="var(--teal)" strokeWidth="1.4" />
           </svg>
         ) : (
-          <div className="flow-stats__empty">not enough samples yet.</div>
+          <div className="flow-stats__empty">Not enough samples yet.</div>
         )}
         <div className="flow-stats__row">
-          <span className="flow-stats__row-key">total</span>
+          <span className="flow-stats__row-key">Total</span>
           <span className="flow-stats__row-val flow-stats__row-val--teal">{stats.totalTokens ? fmtTokens(stats.totalTokens) : '0'}</span>
         </div>
       </section>
 
       <section className="flow-stats__section">
-        <div className="flow-stats__section-title">tools per turn</div>
+        <div className="flow-stats__section-title">Tools per turn</div>
         {bars.length ? (
           <div className="flow-stats__bars">
             {bars.map(([turn, v]) => (
@@ -2543,12 +2543,12 @@ function FlowStatsPanel({ agents, agentState, subagentChildren, onClose, tick })
             ))}
           </div>
         ) : (
-          <div className="flow-stats__empty">no turns yet.</div>
+          <div className="flow-stats__empty">No turns yet.</div>
         )}
       </section>
 
       <section className="flow-stats__section">
-        <div className="flow-stats__section-title">top tool kinds</div>
+        <div className="flow-stats__section-title">Top tool kinds</div>
         {stats.topKinds.length ? (
           <ul className="flow-stats__list">
             {stats.topKinds.map((k) => (
@@ -2559,29 +2559,29 @@ function FlowStatsPanel({ agents, agentState, subagentChildren, onClose, tick })
             ))}
           </ul>
         ) : (
-          <div className="flow-stats__empty">no tool calls yet.</div>
+          <div className="flow-stats__empty">No tool calls yet.</div>
         )}
       </section>
 
       <section className="flow-stats__section">
-        <div className="flow-stats__section-title">sub-agents</div>
+        <div className="flow-stats__section-title">Subagents</div>
         {stats.subAgentCount > 0 ? (
           <>
             <div className="flow-stats__row">
-              <span className="flow-stats__row-key">spawned</span>
+              <span className="flow-stats__row-key">Spawned</span>
               <span className="flow-stats__row-val">{stats.subAgentCount}</span>
             </div>
             <div className="flow-stats__row">
-              <span className="flow-stats__row-key">avg time</span>
+              <span className="flow-stats__row-key">Avg time</span>
               <span className="flow-stats__row-val">{stats.subAgentAvgMs ? fmtDuration(stats.subAgentAvgMs) : '--'}</span>
             </div>
-            <div className="flow-stats__row" title="sum of tool calls inside expanded sub-agents (fetched on demand)">
-              <span className="flow-stats__row-key">total child calls</span>
+            <div className="flow-stats__row" title="Sum of tool calls inside expanded sub-agents (fetched on demand)">
+              <span className="flow-stats__row-key">Total child calls</span>
               <span className="flow-stats__row-val">{stats.subAgentChildCallTotal || 0}</span>
             </div>
             {stats.lastSubAgent && (
               <div className="flow-stats__row">
-                <span className="flow-stats__row-key">most recent</span>
+                <span className="flow-stats__row-key">Most recent</span>
                 <span
                   className="flow-stats__row-val flow-stats__row-val--blue"
                   title={stats.lastSubAgent.label || ''}
@@ -2592,18 +2592,18 @@ function FlowStatsPanel({ agents, agentState, subagentChildren, onClose, tick })
             )}
           </>
         ) : (
-          <div className="flow-stats__empty">none yet.</div>
+          <div className="flow-stats__empty">None yet.</div>
         )}
       </section>
 
       <section className="flow-stats__section flow-stats__section--counters">
-        <Counter label="tool calls" value={stats.totalCalls} />
-        <Counter label="turns"      value={stats.totalTurns} />
-        <Counter label="sub-agents" value={stats.subAgentCount} />
-        <Counter label="peak parallel" value={stats.peakInFlight} />
-        <Counter label="longest"    value={fmtDuration(stats.longestMs) || '0ms'} />
-        <Counter label="last activity" value={sincePart(stats.lastActivityAt)} />
-        <Counter label="last user msg" value={sincePart(stats.lastUserAt)} />
+        <Counter label="Tool calls" value={stats.totalCalls} />
+        <Counter label="Turns"      value={stats.totalTurns} />
+        <Counter label="Subagents" value={stats.subAgentCount} />
+        <Counter label="Peak parallel" value={stats.peakInFlight} />
+        <Counter label="Longest"    value={fmtDuration(stats.longestMs) || '0ms'} />
+        <Counter label="Last activity" value={sincePart(stats.lastActivityAt)} />
+        <Counter label="Last user message" value={sincePart(stats.lastUserAt)} />
       </section>
     </aside>
   );
@@ -2637,7 +2637,7 @@ function FlowSettingsPanel({
     <aside
       className="flow-settings"
       role="complementary"
-      aria-label="flow settings"
+      aria-label="Flow Settings"
       // Stop pan/zoom gestures inside the panel from being interpreted as
       // canvas pan/zoom. The panel sits over .flow-canvas; without this
       // React Flow grabs the mousedown.
@@ -2645,13 +2645,13 @@ function FlowSettingsPanel({
       onWheelCapture={(e) => e.stopPropagation()}
     >
       <header className="flow-settings__head">
-        <h3 className="flow-settings__title">flow settings</h3>
+        <h3 className="flow-settings__title">Flow Settings</h3>
         <button
           type="button"
           className="flow-settings__close"
           onClick={onClose}
-          title="close settings panel"
-          aria-label="close"
+          title="Close settings panel"
+          aria-label="Close"
         >x</button>
       </header>
 
@@ -2666,10 +2666,10 @@ function FlowSettingsPanel({
               value={settings.direction}
               onChange={(e) => onChange({ direction: e.target.value })}
             >
-              <option value="LR">left to right</option>
-              <option value="TB">top to bottom</option>
-              <option value="RL">right to left</option>
-              <option value="BT">bottom to top</option>
+              <option value="LR">Left to right</option>
+              <option value="TB">Top to bottom</option>
+              <option value="RL">Right to left</option>
+              <option value="BT">Bottom to top</option>
             </select>
           </div>
           <SliderRow
@@ -2694,7 +2694,7 @@ function FlowSettingsPanel({
               className="flow-settings__btn"
               onClick={onResetLayout}
               disabled={!canResetLayout}
-              title="snap every dragged node back to the auto-computed position"
+              title="Snap every dragged node back to the auto-computed position"
             >Reset layout</button>
           </div>
         </section>
@@ -2892,7 +2892,7 @@ function FlowSettingsPanel({
             type="button"
             className="flow-settings__btn flow-settings__btn--danger"
             onClick={onResetAll}
-            title="clear localStorage + revert every setting to its default"
+            title="Clear localStorage and revert every setting to its default"
           >Reset to defaults</button>
         </section>
       </div>

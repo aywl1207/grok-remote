@@ -8,8 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, type SpawnOptions } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-
-const GROK_BIN = process.env['GROK_BIN'] || 'grok';
+import { resolveGrokBin } from './grok-bin.js';
 
 interface CmdResult { stdout: string; stderr: string; }
 
@@ -97,7 +96,7 @@ export async function buildTraceForSessionId(sessionId: string, cwd?: string | n
   fs.mkdirSync(extractDir, { recursive: true });
 
   try {
-    const exportOut = await runCmd(GROK_BIN, [
+    const exportOut = await runCmd(resolveGrokBin(), [
       'trace', sessionId, '--local', '--json', '-o', archivePath,
     ]);
     let exportStatus: unknown = null;

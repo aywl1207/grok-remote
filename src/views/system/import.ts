@@ -235,23 +235,23 @@ function render(): void {
     <section class="system-page importer-page">
       <h2 class="system-page-title">Import</h2>
       <p class="system-page-sub">
-        wraps <code>grok import</code>. tick a row, or paste <code>.jsonl</code>
-        paths below, then "import selected". no selection imports everything.
+        Wraps <code>grok import</code>. Tick a row, or paste <code>.jsonl</code>
+        paths below, then Import Selected. No selection imports everything.
       </p>
 
       <div class="importer-section">
         <div class="importer-section-head">
-          <span class="importer-section-title">available to import</span>
-          <button class="importer-reload" type="button">${state.loadingList ? 'loading...' : 'reload'}</button>
+          <span class="importer-section-title">Available to import</span>
+          <button class="importer-reload" type="button">${state.loadingList ? 'Loading…' : 'Reload'}</button>
         </div>
         ${state.listError ? `<div class="importer-error">${escapeHtml(state.listError)}</div>` : ''}
         <div class="importer-available">
-          ${availableRowsHtml || `<div class="importer-empty">${state.loadingList ? 'loading...' : 'nothing available. paste a path below, or submit empty to let grok scan.'}</div>`}
+          ${availableRowsHtml || `<div class="importer-empty">${state.loadingList ? 'Loading…' : 'Nothing available. Paste a path below, or submit empty to let Grok scan.'}</div>`}
         </div>
       </div>
 
       <div class="importer-section">
-        <label class="importer-section-title" for="importer-paste">paste .jsonl paths (one per line)</label>
+        <label class="importer-section-title" for="importer-paste">Paste .jsonl paths (one per line)</label>
         <textarea
           id="importer-paste"
           class="importer-paste"
@@ -262,25 +262,25 @@ function render(): void {
 
       <div class="importer-submit-row">
         <button class="importer-submit" type="button" ${state.submitting ? 'disabled' : ''}>
-          ${state.submitting ? 'importing...' : (targetsPreview.length ? `import selected (${targetsPreview.length})` : 'import all available')}
+          ${state.submitting ? 'Importing…' : (targetsPreview.length ? `Import Selected (${targetsPreview.length})` : 'Import All Available')}
         </button>
         <span class="importer-targets-hint">
-          ${targetsPreview.length ? `targets: ${targetsPreview.length}` : 'no targets selected; grok will import every session it can find.'}
+          ${targetsPreview.length ? `Targets: ${targetsPreview.length}` : 'No targets selected; Grok will import every session it can find.'}
         </span>
       </div>
 
       ${state.submitError ? `<div class="importer-error">${escapeHtml(state.submitError)}</div>` : ''}
 
       <div class="importer-section">
-        <div class="importer-section-title">result</div>
+        <div class="importer-section-title">Result</div>
         <div class="importer-result-wrap">
           <table class="importer-result-table">
             <thead>
-              <tr><th>status</th><th>target</th><th>detail</th></tr>
+              <tr><th>Status</th><th>Target</th><th>Detail</th></tr>
             </thead>
             <tbody>${eventsHtml}</tbody>
           </table>
-          ${state.events.length ? '' : `<div class="importer-empty">no events yet. hit "import" above.</div>`}
+          ${state.events.length ? '' : `<div class="importer-empty">No events yet. Hit Import above.</div>`}
         </div>
       </div>
     </section>
@@ -314,12 +314,12 @@ function wire(): void {
       const hint      = activeContainer!.querySelector('.importer-targets-hint') as HTMLElement | null;
       const targets   = collectTargets();
       if (submitBtn2 && !state.submitting) {
-        submitBtn2.textContent = targets.length ? `import selected (${targets.length})` : 'import all available';
+        submitBtn2.textContent = targets.length ? `Import Selected (${targets.length})` : 'Import All Available';
       }
       if (hint) {
         hint.textContent = targets.length
-          ? `targets: ${targets.length}`
-          : 'no targets selected; grok will import every session it can find.';
+          ? `Targets: ${targets.length}`
+          : 'No targets selected; Grok will import every session it can find.';
       }
     });
   }
